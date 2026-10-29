@@ -1,6 +1,6 @@
 name: skill-branches
 label: Skill Branches
-version: 0.4.1
+version: 0.4.2
 description: >-
   Routes each user turn to a branch of skills. Reads a branch file (name, one-line description,
   skill names) from the plugin's data folder, lists the branches once per session in the system

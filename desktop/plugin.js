@@ -113,7 +113,7 @@ const CSS = `
 .skb-chev{width:7px;height:7px;margin-top:5px;border:solid var(--ui-text-secondary);border-width:0 1.5px 1.5px 0;transform:rotate(-45deg);transition:transform 150ms cubic-bezier(0,0,.38,.9)}
 .skb [aria-expanded=true] .skb-chev{transform:rotate(45deg) translate(-1px,-1px)}
 .skb-sk{list-style:none;margin:0 0 8px;padding:0}
-.skb-sk li{position:relative;display:grid;grid-template-columns:170px minmax(0,1fr);gap:4px 14px;padding:4px 6px 4px 18px;line-height:18px;border-radius:0 6px 6px 0;transition:background-color 150ms cubic-bezier(0,0,.38,.9)}
+.skb-sk li{position:relative;display:grid;grid-template-columns:170px minmax(0,1fr) 14px;gap:4px 14px;padding:4px 6px 4px 18px;line-height:18px;border-radius:0 6px 6px 0;transition:background-color 150ms cubic-bezier(0,0,.38,.9)}
 .skb-sk li:hover,.skb-sk li.skb-lit{background:color-mix(in srgb,var(--h) 10%,transparent)}
 .skb-sk li::before{content:"";position:absolute;left:0;top:0;width:18px;height:13px;box-sizing:border-box;border:solid var(--h);border-width:0 0 1.5px 1.5px;border-radius:0 0 0 8px;opacity:.85}
 .skb-sk li:not(:last-child)::after{content:"";position:absolute;left:0;top:13px;bottom:0;border-left:1.5px solid var(--h);opacity:.85}
@@ -122,12 +122,14 @@ const CSS = `
 .skb-sk span{color:var(--ui-text-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .skb-sk li.skb-miss b{color:var(--ui-text-secondary)}.skb-sk li.skb-miss b::before{background:none;border:1px solid var(--h);box-sizing:border-box}
 .skb-sk li.skb-miss span{font-style:italic}
-.skb .skb-add{position:absolute;right:6px;top:3px;background:var(--ground);opacity:0;font-size:12px;font-weight:600;line-height:18px;padding:0 7px;border:1px solid var(--ui-stroke-secondary);border-radius:6px;white-space:nowrap;transition:opacity 120ms cubic-bezier(.2,0,.38,.9)}
+.skb .skb-add{display:grid;place-items:center;justify-self:end;width:20px;height:18px;margin-right:-6px;padding:0;border-radius:5px;color:var(--ui-text-secondary);opacity:0;transition:opacity 120ms cubic-bezier(.2,0,.38,.9),background-color 120ms cubic-bezier(.2,0,.38,.9)}
 .skb-sk li:hover .skb-add,.skb-sk li:focus-within .skb-add,.skb .skb-add[data-sent]{opacity:1}
-.skb .skb-add:hover{background:color-mix(in srgb,var(--ui-text-primary) 7%,var(--ground))}
+.skb .skb-add:hover{color:var(--ui-text-primary);background:color-mix(in srgb,var(--ui-text-primary) 9%,transparent)}
+.skb .skb-add[data-sent]{color:var(--ui-text-primary)}
+@media (hover:none){.skb .skb-add{opacity:1}}
 .skb .skb-addrow{display:block}
-.skb .skb-addrow button{font-size:12.5px;font-weight:600;color:var(--ui-text-secondary);padding:0 6px;margin-left:-6px;border-radius:6px;line-height:18px}
-.skb .skb-addrow button::before{content:"+";display:inline-block;width:10px;margin-right:6px;font-weight:600}
+.skb .skb-addrow button{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ui-text-secondary);padding:0 6px;margin-left:-6px;border-radius:6px;line-height:18px}
+.skb .skb-addrow svg{flex:none}
 .skb .skb-addrow button:hover{color:var(--ui-text-primary);background:color-mix(in srgb,var(--ui-text-primary) 6%,transparent)}
 .skb-sk li.skb-nw b::before{background:none;border:1.5px dashed var(--ui-accent);box-sizing:border-box;width:7px;height:7px}
 .skb-seeds{margin-top:22px;--h:var(--ui-text-tertiary)}
@@ -182,11 +184,17 @@ const CSS = `
 @container (max-width:720px){
   .skb-cols{grid-template-columns:1fr;gap:16px}.skb-side{position:static;order:-1}.skb-gl{display:none}
   .skb .skb-tog{grid-template-columns:9px minmax(0,1fr) auto 12px}.skb-tog .skb-d{grid-column:2/4;grid-row:2}
-  .skb-sk li{grid-template-columns:minmax(0,1fr)}.skb-sk li span{padding-left:11px}
+  .skb-sk li{grid-template-columns:minmax(0,1fr) 14px}.skb-sk li span{grid-area:2/1/3/-1;padding-left:11px}.skb-sk li .skb-add{grid-area:1/2}
   .skb-sprout{grid-template-columns:16px minmax(0,1fr) auto}.skb-sprout span{grid-column:2/-1}
 }
 @media (prefers-reduced-motion:reduce){.skb *{animation:none!important;transition:none!important}}
 `
+
+// Plus (add), minus (remove) or check (request sent): drawn, in the text colour.
+function ActIcon ({ kind }) {
+  const d = { add: 'M6 2.5v7M2.5 6h7', remove: 'M2.5 6h7', sent: 'M2.5 6.3 5 8.6l4.5-5.2' }[kind]
+  return h('svg', { width: 12, height: 12, viewBox: '0 0 12 12', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' }, h('path', { d }))
+}
 
 const lower = s => (typeof s === 'string' ? s.toLowerCase() : '')
 const ncol = n => (n <= 4 ? Math.max(n, 1) : Math.ceil(Math.sqrt(n * 1.8)))
@@ -346,9 +354,11 @@ function Tree({ ctx, tree, skills, seen, t }) {
   }
 
   const sentKey = key => (asked[key] ? { 'data-sent': '' } : {})
-  const addButton = name => h('button', {
-    type: 'button', className: 'skb-add', 'aria-label': t('skb.askLabel', name), ...sentKey(name), onClick: () => ask(name)
-  }, asked[name] ? askLabel[asked[name]] : t('skb.add'))
+  // Row buttons are icons in their own column; the label is the tooltip, the full name is for screen readers.
+  const rowButton = (key, className, label, name, onClick, icon) => h('button', {
+    type: 'button', className, title: asked[key] ? askLabel[asked[key]] : label, 'aria-label': name, ...sentKey(key), onClick
+  }, jsx(ActIcon, { kind: asked[key] === 'opened' || asked[key] === 'inserted' ? 'sent' : icon }))
+  const addButton = name => rowButton(name, 'skb-add', t('skb.add'), t('skb.askLabel', name), () => ask(name), 'add')
   const skillRow = (name, extraClass, text, action) => h('li', {
     key: name,
     className: [extraClass, hov === name ? 'skb-lit' : ''].filter(Boolean).join(' '),
@@ -357,16 +367,13 @@ function Tree({ ctx, tree, skills, seen, t }) {
   }, h('b', null, jsx(Hl, { text: name, q: ql })), h('span', { title: text }, jsx(Hl, { text, q: ql })), action || null)
   const removeButton = (s, b) => {
     const key = `rm:${b.name}:${s}`
-    return h('button', {
-      type: 'button', className: 'skb-add skb-rm', 'aria-label': t('skb.removeLabel', s, b.name), ...sentKey(key),
-      onClick: () => ask(key, t('skb.removeText', s, b.name))
-    }, asked[key] ? askLabel[asked[key]] : t('skb.remove'))
+    return rowButton(key, 'skb-add skb-rm', t('skb.remove'), t('skb.removeLabel', s, b.name), () => ask(key, t('skb.removeText', s, b.name)), 'remove')
   }
   const addRow = b => {
     const key = `branch:${b.name}`
     return h('li', { key, className: 'skb-addrow' }, h('button', {
       type: 'button', onClick: () => ask(key, t('skb.addToText', b.name))
-    }, asked[key] ? askLabel[asked[key]] : t('skb.addTo', b.name)))
+    }, jsx(ActIcon, { kind: 'add' }), asked[key] ? askLabel[asked[key]] : t('skb.addTo', b.name)))
   }
 
   const branchList = h('div', { className: 'skb-bs', style: { '--nw': nameWidth } }, rows.filter(r => r.visible).map(r => h('div', {

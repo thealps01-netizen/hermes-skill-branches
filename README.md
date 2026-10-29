@@ -17,10 +17,11 @@ on every turn, to name the area of the request first did.
   folder named after the plugin), a tile map of all of them, and search over names and descriptions. It warns when the branch file is invalid (routing
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
   that are not installed, and lists skills that arrived since the branch file last changed.
-- **Adding skills by hand:** each branch ends with "Add a skill to <branch>", and each seed row has
-  "Add to a branch"; each skill on a branch has "Remove from branch" (both shown on hover or
-  keyboard focus). They open a new chat with the request in its message box; you read it and send it, the assistant shows the
-  change before and after, and writes it only after you approve. Removing takes the skill off the
+- **Adding skills by hand:** each branch ends with "Add a skill to <branch>"; each seed row has a
+  + button ("Add to a branch") and each skill on a branch a − button ("Remove from branch"),
+  shown on hover or keyboard focus (always on touch screens) in their own column at the row's
+  end. They open a new chat with the request in its message box; you read it and send it, the
+  assistant shows the change before and after, and writes it only after you approve. Removing takes the skill off the
   branch only; it stays installed. The page itself never writes or deletes a file.
 - **Guided setup:** ships one skill, `skill-branches:setup`. When the branch file is missing the
   page offers "Set up with the assistant", which opens a new chat with a request to load it. The

@@ -1,7 +1,7 @@
 ---
 name: setup
 description: "Use when setting up or changing skill branches. Guided."
-version: 0.4.1
+version: 0.4.2
 author: Muhammed Enes Alpler
 license: MIT
 ---
