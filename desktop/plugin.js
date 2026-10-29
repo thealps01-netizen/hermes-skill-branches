@@ -253,11 +253,13 @@ async function sendToChat(ctx, t, text) {
     if (typeof host.newChat === 'function') {
       host.newChat()
       for (let i = 0; i < INSERT_TRIES; i++) {
-        if (await host.composer?.insertText?.('new', text, { mode: 'block' })) {
+        await new Promise(resolve => ctx.setTimeout(resolve, INSERT_WAIT_MS))
+        if (!(await host.composer?.insertText?.('new', text, { mode: 'block' }))) continue
+        const draft = await host.composer?.getDraft?.('new')
+        if (draft == null || draft.includes(text)) {
           notice('info', 'skb.sentNotice')
           return 'opened'
         }
-        await new Promise(resolve => ctx.setTimeout(resolve, INSERT_WAIT_MS))
       }
     } else if (await host.composer?.insertText?.(null, text, { mode: 'block' })) {
       return 'inserted'
