@@ -32,7 +32,7 @@ def _pre_llm_call(**_):
 
 
 def _description(path):
-    for line in path.read_text(encoding="utf-8").split("\n---\n", 1)[0].splitlines()[1:]:
+    for line in path.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n---\n", 1)[0].splitlines()[1:]:
         key, _, value = line.partition(":")
         if key.strip() == "description":
             return value.strip().strip('"')

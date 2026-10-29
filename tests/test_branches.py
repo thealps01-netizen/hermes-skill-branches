@@ -216,7 +216,7 @@ class PluginTests(unittest.TestCase):
 
 
 def _frontmatter(path):
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
     head = text.split("\n---\n", 1)[0]
     return {k.strip(): v.strip().strip('"') for k, v in (line.split(":", 1) for line in head.splitlines()[1:] if ":" in line)}
 
@@ -225,7 +225,7 @@ class SetupSkillTests(unittest.TestCase):
     PATH = ROOT / "skills" / "setup" / "SKILL.md"
 
     def test_frontmatter(self):
-        text = self.PATH.read_text(encoding="utf-8")
+        text = self.PATH.read_text(encoding="utf-8").replace("\r\n", "\n")
         self.assertTrue(text.startswith("---\n"))
         fm = _frontmatter(self.PATH)
         self.assertEqual(fm["name"], "setup")
