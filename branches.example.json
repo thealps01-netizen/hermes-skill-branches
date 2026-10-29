@@ -1,0 +1,15 @@
+{
+  "group": "Example",
+  "branches": [
+    {
+      "name": "code",
+      "description": "Any change to non-game source code.",
+      "skills": ["example-coding-rules"]
+    },
+    {
+      "name": "docs",
+      "description": "Writing or editing documents.",
+      "skills": ["example-writing-guide"]
+    }
+  ]
+}
