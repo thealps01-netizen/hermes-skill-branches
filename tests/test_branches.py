@@ -57,6 +57,59 @@ class LoadTests(unittest.TestCase):
         self.assertEqual(got[0]["description"], "Çalışma ağacı, şube, ığdır.")
 
 
+class InspectTests(unittest.TestCase):
+    """What the panel shows: the same validation as load(), with the reason and ignored fields."""
+
+    def _inspect(self, data):
+        with tempfile.TemporaryDirectory() as tmp:
+            return branches.inspect(_write(tmp, data))
+
+    def test_ok(self):
+        got = self._inspect(TREE)
+        self.assertEqual(got["state"], "ok")
+        self.assertIsNone(got["problem"])
+        self.assertEqual(got["group"], "Code")
+        self.assertEqual([b["name"] for b in got["branches"]], ["alpha", "beta"])
+        self.assertEqual(got["ignored"], [])
+        self.assertIsInstance(got["modified"], float)
+
+    def test_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            got = branches.inspect(Path(tmp) / "nope.json")
+        self.assertEqual((got["state"], got["branches"], got["modified"]), ("missing", [], None))
+
+    def test_bad_json_names_line_and_column(self):
+        got = self._inspect('{"branches": [\n  {"name": "a",}\n]}')
+        self.assertEqual(got["state"], "invalid")
+        self.assertIn("line 2", got["problem"])
+        self.assertEqual(got["branches"], [])
+
+    def test_bad_branch_names_the_branch_and_field(self):
+        got = self._inspect({"branches": [TREE["branches"][0], {"name": "pr", "description": "d", "skills": "x"}]})
+        self.assertEqual(got["state"], "invalid")
+        self.assertEqual(got["problem"], 'Branch 2 ("pr"): "skills" must be a list of skill names.')
+
+    def test_nested_branches_in_place_of_skills_are_invalid(self):
+        nested = {"name": "pr", "description": "d", "branches": [{"name": "x", "description": "", "skills": ["s"]}]}
+        got = self._inspect({"branches": [nested]})
+        self.assertEqual(got["state"], "invalid")
+        self.assertEqual(got["problem"], 'Branch 1 ("pr"): "skills" must be a list of skill names.')
+
+    def test_nested_branches_beside_skills_are_ignored_and_reported(self):
+        nested = dict(TREE["branches"][0], branches=[{"name": "x", "description": "", "skills": ["s"]}])
+        got = self._inspect({"group": "Code", "extra": 1, "branches": [nested]})
+        self.assertEqual(got["state"], "ok")
+        self.assertEqual(got["ignored"], ['"extra"', 'Branch "alpha": "branches"'])
+
+    def test_branches_not_a_list(self):
+        self.assertEqual(self._inspect({"branches": {"a": 1}})["problem"], 'The file must have a "branches" list.')
+
+    def test_load_uses_the_same_validation(self):
+        nested = dict(TREE["branches"][0], branches=[])
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(branches.load(_write(tmp, {"branches": [nested]}))[0]["name"], "alpha")
+
+
 class RenderTests(unittest.TestCase):
     def test_render_section_format(self):
         self.assertEqual(branches.render_section(TREE["branches"]),

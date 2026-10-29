@@ -12,6 +12,12 @@ on every turn, to name the area of the request first did.
 - **Every turn:** adds one sentence asking the model to name the branch the message belongs to (or
   `none`) before its first tool call, then load with `skill_view` the skills of that branch that apply.
 - It never loads a skill itself; the model picks within the branch.
+- **Desktop page:** a "Skill branches" row in the app's sidebar opens a read-only view: the branches
+  and their skills, every other installed skill as a seed grouped by folder, a tile map of all of
+  them, and search over names and descriptions. It warns when the branch file is invalid (routing
+  is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
+  that are not installed, and lists skills that arrived since the branch file last changed with an
+  "Ask the assistant" button that writes a request into the chat box. It never writes a file.
 
 ## Branch file
 
@@ -24,6 +30,11 @@ on every turn, to name the area of the request first did.
 ```
 
 - Missing file: the plugin adds nothing. Invalid file: adds nothing and logs one warning.
+- One level only: a branch holds skill names, not other branches. A `branches` list in place of
+  `skills` makes the file invalid; one beside `skills` is ignored. The desktop page shows both.
+  Research on tool routing found an extra selection level hurts at this size (each level is a
+  chance to pick wrong with no way back), so nesting is worth re-measuring only past about 20–30
+  branches or when branch descriptions overlap.
 - Skill names are not checked against installed skills: a wrong name makes `skill_view` answer
   "not found" and the model moves on. Checking would need private Hermes internals.
 - The section is frozen when a session starts (Hermes keeps the system prompt stable for caching);

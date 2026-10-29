@@ -1,18 +1,23 @@
 # AGENTS.md — skill-branches
 
-Native Hermes plugin (hooks only, no UI). `__init__.py` registers one cache-safe system-prompt section
+Native Hermes plugin with a read-only desktop page. `__init__.py` registers one cache-safe system-prompt section
 (`skill-branches.tree`, the branch list, rendered once per new session) and one `pre_llm_call` hook (a
 one-sentence directive on every turn). `branches.py` loads and validates the branch file and renders
-both texts. `README.md` explains behaviour, the file format and limits.
+both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
+serves `GET /tree` (that inspection) to `desktop/plugin.js`, the page; skills come from the host SDK.
+`README.md` explains behaviour, the file format and limits.
 
 ## Setup (fresh checkout)
 - Python 3.11+, standard library only. No `pip install`.
+- Node 20+; run `npm ci` once in `tests/` (React and jsdom, pinned to the core desktop app's versions).
 - The branch file lives at `<hermes home>/plugin-data/skill-branches/branches.json`; copy
   `branches.example.json` there and edit it. Unit tests do not need it.
 
 ## Validation (run all after any change; each must pass)
 ```bash
 PYTHONUTF8=1 python -m unittest discover -s tests
+node tests/render_check.mjs
+<core python with FastAPI> tests/api_check.py   # the Python that runs the Hermes gateway
 hermes plugins validate "$(cygpath -m "$PWD")"
 hermes plugins doctor "$(cygpath -m "$PWD")"
 ```
@@ -29,12 +34,18 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
 - The branch file is read as UTF-8; Turkish text must survive.
 - A new rule gets a unit test that fails on the old behaviour first.
 - Develop only in this checkout. Never edit the installed copy under `<hermes home>/plugins/`.
-- Agent-read text (code, comments, docs) is English.
+- Agent-read text (code, comments, docs) is English; the page's copy is English too (the app has no
+  other locale) and lives in the `en` bundle.
+- The page is read-only: it calls `GET /tree` only, writes no file, toggles nothing; its one storage
+  key, `seen`, records the skills present when the branch file last changed.
+- Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
+  no text under 12px; one animation, off under `prefers-reduced-motion`. `render_check.mjs` locks these.
 - A change to the directive or section wording is re-measured with the routing test (README →
   Measurement) before release.
 
 ## Ship
 Push `main` to `github.com/thealps01-netizen/hermes-skill-branches` (owner's yes first), then install
 pinned: `hermes plugins install thealps01-netizen/hermes-skill-branches --force --ref <40-char commit> --enable`.
-Bump `version` in `plugin.yaml` for every release. Native hooks load per process: new code runs in
+Bump `version` in `plugin.yaml` and `dashboard/manifest.json` for every release. The page and its
+`/tree` route appear after the desktop app restarts. Native hooks load per process: new code runs in
 sessions started after the install; `--enable` reloads the running gateway.
