@@ -18,9 +18,10 @@ on every turn, to name the area of the request first did.
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
   that are not installed, and lists skills that arrived since the branch file last changed.
 - **Adding skills by hand:** each branch ends with "Add a skill to <branch>", and each seed row has
-  "Add to a branch" (shown on hover or keyboard focus). Both put a request into the chat box; you
-  send it, the assistant shows the change before and after, and writes it only after you approve.
-  The page itself never writes a file.
+  "Add to a branch"; each skill on a branch has "Remove from branch" (both shown on hover or
+  keyboard focus). They put a request into the chat box; you send it, the assistant shows the
+  change before and after, and writes it only after you approve. Removing takes the skill off the
+  branch only; it stays installed. The page itself never writes or deletes a file.
 - **Guided setup:** ships one skill, `skill-branches:setup`. When the branch file is missing the
   page offers "Set up with the assistant", which puts a request to load it into the chat box. The
   assistant lists your installed skills, asks what work you do, shows a draft file with a reason per

@@ -39,6 +39,9 @@ const en = {
     add: 'Add to a branch',
     addTo: name => `Add a skill to ${name}`,
     addToText: name => `Load skill-branches:setup and help me add a skill to my ${name} skill branch; ask me which one.`,
+    remove: 'Remove from branch',
+    removeLabel: (skill, branch) => `Ask the assistant to take ${skill} off ${branch}`,
+    removeText: (skill, branch) => `Load skill-branches:setup and help me take the ${skill} skill off my ${branch} skill branch. Keep the skill installed.`,
     askInserted: 'Added to the chat box',
     askCopied: 'Copied — paste it into a chat',
     askFailed: 'Could not copy',
@@ -326,6 +329,13 @@ function Tree({ ctx, tree, skills, seen, t }) {
     onMouseEnter: () => setHov(name),
     onMouseLeave: () => setHov(null)
   }, h('b', null, jsx(Hl, { text: name, q: ql })), h('span', { title: text }, jsx(Hl, { text, q: ql })), action || null)
+  const removeButton = (s, b) => {
+    const key = `rm:${b.name}:${s}`
+    return h('button', {
+      type: 'button', className: 'skb-add skb-rm', 'aria-label': t('skb.removeLabel', s, b.name), ...sentKey(key),
+      onClick: () => ask(key, t('skb.removeText', s, b.name))
+    }, asked[key] ? askLabel[asked[key]] : t('skb.remove'))
+  }
   const addRow = b => {
     const key = `branch:${b.name}`
     return h('li', { key, className: 'skb-addrow' }, h('button', {
@@ -343,7 +353,7 @@ function Tree({ ctx, tree, skills, seen, t }) {
   h('span', { className: 'skb-d', title: r.b.description }, jsx(Hl, { text: r.b.description, q: ql })),
   h('em', null, String(r.b.skills.length)), h('i', { className: 'skb-chev' })),
   h('ul', { className: 'skb-sk', id: `${uid}l${r.i}`, 'aria-label': t('skb.skillsOn', r.b.name), hidden: !r.isOpen },
-    r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s)) : skillRow(s, 'skb-miss', t('skb.notInstalled'))),
+    r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s), removeButton(s, r.b)) : skillRow(s, 'skb-miss', t('skb.notInstalled'), removeButton(s, r.b))),
     ql ? null : addRow(r.b)))))
 
   const sprouts = freshShown.length ? h(Fragment, null,

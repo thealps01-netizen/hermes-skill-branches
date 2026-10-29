@@ -1,7 +1,7 @@
 ---
 name: setup
 description: "Use when setting up or changing skill branches. Guided."
-version: 0.4.0
+version: 0.4.1
 author: Muhammed Enes Alpler
 license: MIT
 ---
@@ -37,4 +37,4 @@ Each turn the plugin asks the model to name the branch a message belongs to and 
    - Ask the user to open the Skill branches page in the desktop app. It should list each branch and mark no skill as missing.
    - Give the user one test message for a new session, matching one of their branches. The reply should start by naming that branch and loading its skills.
 6. **When something is skipped later,** add that skill to the branch where it was needed, with the same draft, approve and write steps. Add a branch or skill only after a real miss, not in advance.
-7. **When the user asks to add a skill themselves** (the desktop page's Add buttons send such requests), their request is the reason; the real-miss rule in step 6 is for your own proposals. If they name no skill or no branch, suggest one with a one-line reason and let them choose. Show the changed branch before and after, and write only after they approve.
+7. **When the user asks to add or remove a skill themselves** (the desktop page's Add and Remove buttons send such requests), their request is the reason; the real-miss rule in step 6 is for your own proposals. If they name no skill or no branch, suggest one with a one-line reason and let them choose. Show the changed branch before and after, and write only after they approve. Removing takes the name off the branch only: the skill stays installed and still loads by its own description. If a branch would be left with no skills, ask whether to remove the branch too.

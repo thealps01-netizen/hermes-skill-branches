@@ -40,7 +40,7 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
 - Agent-read text (code, comments, docs) is English; the page's copy is English too (the app has no
   other locale) and lives in the `en` bundle.
 - The page is read-only: it calls `GET /tree` only, writes no file, toggles nothing; its one storage
-  key, `seen`, records the skills present when the branch file last changed. Its Add buttons only
+  key, `seen`, records the skills present when the branch file last changed. Its Add and Remove buttons only
   put a request into the chat box (clipboard as fallback); the assistant edits the file after the
   user approves, following `skills/setup/SKILL.md`.
 - Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
