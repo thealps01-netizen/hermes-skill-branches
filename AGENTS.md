@@ -41,7 +41,9 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
   other locale) and lives in the `en` bundle.
 - The page is read-only: it calls `GET /tree` only, writes no file, toggles nothing; its one storage
   key, `seen`, records the skills present when the branch file last changed. Its Add and Remove buttons only
-  put a request into the chat box (clipboard as fallback); the assistant edits the file after the
+  open a new chat with the request in its box (`host.newChat`, then
+  `composer.insertText('new', …)` with a bounded wait; older apps: the open chat box; then the
+  clipboard) and show a notice saying where it went; the assistant edits the file after the
   user approves, following `skills/setup/SKILL.md`.
 - Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
   no text under 12px; one animation, off under `prefers-reduced-motion`. `render_check.mjs` locks these.

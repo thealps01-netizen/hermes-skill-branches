@@ -85,15 +85,17 @@ export function useQuery({ queryFn }) {
   }, [])
   return s
 }
-export const calls = { insert: [], setEnabled: [] }
-export const state = { skills: [], skillsFail: null, insertResult: true }
+export const calls = { insert: [], setEnabled: [], newChat: [], notify: [] }
+export const state = { skills: [], skillsFail: null, insertResult: true, insertFailTimes: 0, oldDesktop: false }
 export const host = {
+  get newChat() { return state.oldDesktop ? undefined : (...a) => { calls.newChat.push(a) } },
+  notify: n => { calls.notify.push(n); return 'id' },
   skills: {
     list: async () => { if (state.skillsFail) throw new Error(state.skillsFail); return state.skills },
     setEnabled: async (...a) => { calls.setEnabled.push(a) }
   },
   toolsets: { setEnabled: async (...a) => { calls.setEnabled.push(a) } },
-  composer: { insertText: async (...a) => { calls.insert.push(a); return state.insertResult } }
+  composer: { insertText: async (...a) => { calls.insert.push(a); if (state.insertFailTimes > 0) { state.insertFailTimes--; return false } return state.insertResult } }
 }
 `)
 const source = readFileSync(SRC, 'utf8')
@@ -253,11 +255,11 @@ stub.calls.insert.length = 0
 stub.state.insertResult = true
 await click($(el, '.skb-banner .skb-ask'))
 check(stub.calls.insert.length === 1 && stub.calls.insert[0][1] === 'Load skill-branches:setup and help me set up my skill branches.', 'missing file: Set up writes the setup request into the chat box')
-check(text($(el, '.skb-banner .skb-ask')) === 'Added to the chat box', 'missing file: Set up reports the chat box')
+check(text($(el, '.skb-banner .skb-ask')) === 'Opened in a new chat', 'missing file: Set up reports the chat box')
 await unmountAll()
 el = await mountPage(tree({ state: 'missing', branches: [], modified: null }), baseSkills())
 stub.state.insertResult = false
-await click($(el, '.skb-banner .skb-ask'))
+await act(async () => { $(el, '.skb-banner .skb-ask').click(); await new Promise(r => setTimeout(r, 2000)) })
 check(clipboard.at(-1) === 'Load skill-branches:setup and help me set up my skill branches.' && text($(el, '.skb-banner .skb-ask')) === 'Copied — paste it into a chat', 'missing file: no chat box, Set up copies instead')
 stub.state.insertResult = true
 stub.calls.insert.length = 0
@@ -295,14 +297,15 @@ const sprout = $(el, '.skb-sprout')
 check(text($(el, '.skb-newh')) === 'New since the branch file last changed' && text($(sprout, 'b')) === 'fresh-one', 'a later skill is listed as New')
 check($$(el, '.skb-fold li.skb-nw b').map(text).join(',') === 'fresh-one', 'the New skill is also marked in its folder')
 stub.state.insertResult = true
+stub.calls.insert.length = 0
 await click($(sprout, '.skb-ask'))
-check(stub.calls.insert.length === 1 && stub.calls.insert[0][0] === null && stub.calls.insert[0][1] === 'Load skill-branches:setup and help me put the fresh-one skill on one of my skill branches; suggest which one and why.' && stub.calls.insert[0][2]?.mode === 'block', 'Ask writes the message into the chat box')
-check(text($(sprout, '.skb-ask')) === 'Added to the chat box', 'Ask reports the chat box')
+check(stub.calls.insert.length === 1 && stub.calls.insert[0][0] === 'new' && stub.calls.insert[0][1] === 'Load skill-branches:setup and help me put the fresh-one skill on one of my skill branches; suggest which one and why.' && stub.calls.insert[0][2]?.mode === 'block', 'Ask writes the message into the chat box')
+check(text($(sprout, '.skb-ask')) === 'Opened in a new chat', 'Ask reports the chat box')
 await unmountAll()
 el = await mountPage(tree(), [...baseSkills(), skill('fresh-one', 'dev', 'Arrived later.')])
 check($$(el, '.skb-sprout').length === 1, 'New stays listed on the next visit while the branch file is unchanged')
 stub.state.insertResult = false
-await click($(el, '.skb-sprout .skb-ask'))
+await act(async () => { $(el, '.skb-sprout .skb-ask').click(); await new Promise(r => setTimeout(r, 2000)) })
 check(clipboard.at(-1) === 'Load skill-branches:setup and help me put the fresh-one skill on one of my skill branches; suggest which one and why.' && text($(el, '.skb-ask')) === 'Copied — paste it into a chat', 'no chat box: Ask copies instead')
 await unmountAll()
 el = await mountPage(tree({ modified: 200 }), [...baseSkills(), skill('fresh-one', 'dev', 'Arrived later.')])
@@ -316,7 +319,7 @@ const addRows = $$(el, '.skb-br .skb-addrow button')
 check(addRows.map(text).join('|') === 'Add a skill to alpha|Add a skill to beta', `each branch ends with an always-shown Add row (${addRows.map(text)})`)
 await click(addRows[0])
 check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me add a skill to my alpha skill branch; ask me which one.', 'branch Add writes its request into the chat box')
-check(text(addRows[0]) === 'Added to the chat box', 'branch Add reports the chat box')
+check(text(addRows[0]) === 'Opened in a new chat', 'branch Add reports the chat box')
 await click($(el, '.skb-more'))
 const seedFold = $$(el, '.skb-fold').find(f => text($(f, '.skb-n')) === 'folder-03')
 await click($(seedFold, '.skb-tog'))
@@ -325,7 +328,7 @@ const seedAdd = seedRow && $(seedRow, 'button.skb-add')
 check(!!seedAdd && text(seedAdd) === 'Add to a branch' && seedAdd.getAttribute('aria-label') === 'Ask the assistant which branch seed-3 belongs on', 'every seed row has an Add to a branch button named after its skill')
 await click(seedAdd)
 check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me put the seed-3 skill on one of my skill branches; suggest which one and why.', 'seed Add writes its request into the chat box')
-check(text(seedAdd) === 'Added to the chat box' && seedAdd.hasAttribute('data-sent'), 'seed Add reports the chat box and stays shown')
+check(text(seedAdd) === 'Opened in a new chat' && seedAdd.hasAttribute('data-sent'), 'seed Add reports the chat box and stays shown')
 check($$(el, '.skb-br li:not(.skb-addrow) button.skb-add:not(.skb-rm)').length === 0, 'skills already on a branch have no Add button')
 const alphaRows = $$(el, '.skb-br')[0].querySelectorAll('li:not(.skb-addrow)')
 const rmB = [...alphaRows].find(li => text($(li, 'b')) === 'skill-b')
@@ -335,12 +338,36 @@ const rmGone = [...alphaRows].find(li => text($(li, 'b')) === 'skill-gone')
 check(!!(rmGone && $(rmGone, 'button.skb-rm')), 'a skill marked not installed can be removed too')
 await click(rm)
 check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me take the skill-b skill off my alpha skill branch. Keep the skill installed.', 'Remove writes its request into the chat box; nothing is deleted')
-check(text(rm) === 'Added to the chat box' && rm.hasAttribute('data-sent'), 'Remove reports the chat box and stays shown')
+check(text(rm) === 'Opened in a new chat' && rm.hasAttribute('data-sent'), 'Remove reports the chat box and stays shown')
 check($$(el, 'button button').length === 0, 'no button inside another button')
 await unmountAll()
 el = await mountPage(tree(), baseSkills())
 await typeInto($(el, '.skb-find input'), 'zebra')
 check($$(el, '.skb-addrow').length === 0, 'while searching, the branch Add rows step aside')
+await unmountAll()
+
+// 6c. where a request goes: a new chat the user can see
+stub.state.insertResult = true
+stub.calls.insert.length = 0; stub.calls.newChat.length = 0; stub.calls.notify.length = 0
+el = await mountPage(tree(), baseSkills())
+stub.state.insertFailTimes = 2
+await act(async () => { $$(el, '.skb-addrow button')[1].click(); await new Promise(r => setTimeout(r, 900)) })
+check(stub.calls.newChat.length === 1, 'a request opens one new chat')
+check(stub.calls.insert.length === 3 && stub.calls.insert.every(c => c[0] === 'new'), `the request waits for the new chat's box and goes only there (${stub.calls.insert.map(c => c[0])})`)
+check(stub.calls.notify.at(-1)?.kind === 'info' && stub.calls.notify.at(-1)?.message === 'Your request is in a new chat. Read it, then press Enter to send.', 'a notice says where the request went')
+stub.calls.insert.length = 0
+stub.state.insertResult = false
+await act(async () => { $$(el, '.skb-addrow button')[0].click(); await new Promise(r => setTimeout(r, 2500)) })
+check(clipboard.at(-1) === 'Load skill-branches:setup and help me add a skill to my alpha skill branch; ask me which one.' && stub.calls.notify.at(-1)?.kind === 'warning' && stub.calls.notify.at(-1)?.message === 'Copied the request. Paste it into the chat box and send it.', 'no chat box answers: copied, and a notice says so')
+check(stub.calls.insert.length > 1 && stub.calls.insert.length <= 12, `gives up after a bounded wait (${stub.calls.insert.length} tries)`)
+await unmountAll()
+stub.state.oldDesktop = true
+stub.state.insertResult = true
+stub.calls.insert.length = 0
+el = await mountPage(tree(), baseSkills())
+await click($$(el, '.skb-addrow button')[0])
+check(stub.calls.insert.length === 1 && stub.calls.insert[0][0] === null && text($$(el, '.skb-addrow button')[0]) === 'Added to the chat box', 'older app without new chats: the open chat box, as before')
+stub.state.oldDesktop = false
 await unmountAll()
 
 // 7. read-only

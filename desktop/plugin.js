@@ -6,6 +6,8 @@ const ID = 'skill-branches'
 const PATH = '/skill-branches'
 const MAX_FOLDERS = 8
 const SEEN_VERSION = 2
+const INSERT_TRIES = 10
+const INSERT_WAIT_MS = 150
 
 const plural = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
 
@@ -43,6 +45,10 @@ const en = {
     removeLabel: (skill, branch) => `Ask the assistant to take ${skill} off ${branch}`,
     removeText: (skill, branch) => `Load skill-branches:setup and help me take the ${skill} skill off my ${branch} skill branch. Keep the skill installed.`,
     askInserted: 'Added to the chat box',
+    askOpened: 'Opened in a new chat',
+    sentNotice: 'Your request is in a new chat. Read it, then press Enter to send.',
+    copiedNotice: 'Copied the request. Paste it into the chat box and send it.',
+    failedNotice: 'Could not open a chat or copy the request.',
     askCopied: 'Copied — paste it into a chat',
     askFailed: 'Could not copy',
     moreFolders: n => `Show ${n} more folders`,
@@ -238,21 +244,39 @@ function Banner({ tone, title, body, detail, items, action }) {
     action || null)
 }
 
-// Puts a request in the chat box for the user to send; falls back to the clipboard.
-async function sendToChat(ctx, text) {
+// Opens a new chat and puts the request in its box for the user to read and send; older apps
+// get the open chat box; the clipboard is the last resort. The page itself is gone from view
+// after a new chat opens, so a notice says where the request went.
+async function sendToChat(ctx, t, text) {
+  const notice = (kind, key) => { try { host.notify?.({ kind, message: t(key) }) } catch {} }
   try {
-    if (await host.composer?.insertText?.(null, text, { mode: 'block' })) return 'inserted'
+    if (typeof host.newChat === 'function') {
+      host.newChat()
+      for (let i = 0; i < INSERT_TRIES; i++) {
+        if (await host.composer?.insertText?.('new', text, { mode: 'block' })) {
+          notice('info', 'skb.sentNotice')
+          return 'opened'
+        }
+        await new Promise(resolve => ctx.setTimeout(resolve, INSERT_WAIT_MS))
+      }
+    } else if (await host.composer?.insertText?.(null, text, { mode: 'block' })) {
+      return 'inserted'
+    }
   } catch {}
   try {
-    if (await ctx.os?.writeClipboard?.(text)) return 'copied'
+    if (await ctx.os?.writeClipboard?.(text)) {
+      notice('warning', 'skb.copiedNotice')
+      return 'copied'
+    }
   } catch {}
+  notice('error', 'skb.failedNotice')
   return 'failed'
 }
 
 function SetupButton({ ctx, t }) {
   const [sent, setSent] = useState(null)
-  const label = { inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
-  return h('p', null, h('button', { type: 'button', className: 'skb-ask', onClick: async () => setSent(await sendToChat(ctx, t('skb.setupText'))) },
+  const label = { opened: t('skb.askOpened'), inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
+  return h('p', null, h('button', { type: 'button', className: 'skb-ask', onClick: async () => setSent(await sendToChat(ctx, t, t('skb.setupText'))) },
     sent ? label[sent] : t('skb.setup')))
 }
 
@@ -296,10 +320,10 @@ function Tree({ ctx, tree, skills, seen, t }) {
   const nameWidth = `${Math.min(18, Math.max(5, ...m.branches.map(b => b.name.length)) + 1)}ch`
 
   const ask = async (key, text) => {
-    const state = await sendToChat(ctx, text || t('skb.askText', key))
+    const state = await sendToChat(ctx, t, text || t('skb.askText', key))
     setAsked(a => ({ ...a, [key]: state }))
   }
-  const askLabel = { inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
+  const askLabel = { opened: t('skb.askOpened'), inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
 
   const onTreeKey = e => {
     if (!e.target.classList?.contains('skb-tog')) return
