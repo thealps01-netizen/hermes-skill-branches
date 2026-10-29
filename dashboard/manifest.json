@@ -2,6 +2,6 @@
   "name": "skill-branches",
   "label": "Skill Branches",
   "description": "Read-only view of the skill-branch file: the branches, their skills, and whether the file is valid.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api": "plugin_api.py"
 }

@@ -248,6 +248,19 @@ check($$(el, '.skb-br').length === 0 && text($(el, '.skb-seeds .skb-turn em')) =
 await unmountAll()
 el = await mountPage(tree({ state: 'missing', branches: [], modified: null }), baseSkills())
 check(text($(el, '.skb-banner')).includes('No branch file — routing is off') && text($(el, '.skb-banner')).includes('branches.json'), 'missing file: note with path')
+check(!text($(el, '.skb-banner')).includes('branches.example.json'), 'missing file: no hand-editing instruction')
+stub.calls.insert.length = 0
+stub.state.insertResult = true
+await click($(el, '.skb-banner .skb-ask'))
+check(stub.calls.insert.length === 1 && stub.calls.insert[0][1] === 'Load skill-branches:setup and help me set up my skill branches.', 'missing file: Set up writes the setup request into the chat box')
+check(text($(el, '.skb-banner .skb-ask')) === 'Added to the chat box', 'missing file: Set up reports the chat box')
+await unmountAll()
+el = await mountPage(tree({ state: 'missing', branches: [], modified: null }), baseSkills())
+stub.state.insertResult = false
+await click($(el, '.skb-banner .skb-ask'))
+check(clipboard.at(-1) === 'Load skill-branches:setup and help me set up my skill branches.' && text($(el, '.skb-banner .skb-ask')) === 'Copied — paste it into a chat', 'missing file: no chat box, Set up copies instead')
+stub.state.insertResult = true
+stub.calls.insert.length = 0
 await unmountAll()
 el = await mountPage(tree({ ignored: ['Branch "alpha": "branches"'] }), baseSkills())
 const warn = $(el, '.skb-banner.skb-warn')

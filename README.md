@@ -18,10 +18,16 @@ on every turn, to name the area of the request first did.
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
   that are not installed, and lists skills that arrived since the branch file last changed with an
   "Ask the assistant" button that writes a request into the chat box. It never writes a file.
+- **Guided setup:** ships one skill, `skill-branches:setup`. When the branch file is missing the
+  page offers "Set up with the assistant", which puts a request to load it into the chat box. The
+  assistant lists your installed skills, asks what work you do, shows a draft file with a reason per
+  branch, and writes it only after you approve; then it checks the file and gives you a test message.
+  In any chat you can also ask the assistant to set up or change your skill branches.
 
 ## Branch file
 
-`<hermes home>/plugin-data/skill-branches/branches.json`:
+`<hermes home>/plugin-data/skill-branches/branches.json`. The setup skill writes it with you; the
+format, for reading or hand-editing:
 
 ```json
 {"group": "Example", "branches": [
@@ -44,6 +50,9 @@ on every turn, to name the area of the request first did.
 
 - The model can still ignore the instruction; the rate is what the measurement below reports.
 - Per-turn cost: the directive is about 250 characters, injected into every user turn, uncached.
+- The setup skill's one-line entry joins the skill index of every session (about 20 tokens); its
+  body loads only when setup is asked for. On a Hermes without plugin skills, routing still works
+  and only guided setup is missing (one warning in the log).
 
 ## Measurement
 

@@ -140,13 +140,20 @@ def _load_plugin():
 
 class _FakeCtx:
     def __init__(self):
-        self.sections, self.hooks = {}, {}
+        self.sections, self.hooks, self.skills = {}, {}, {}
 
     def register_system_prompt_section(self, id, content, *, position="after_memory", max_chars=4000):
         self.sections[id] = (content, position, max_chars)
 
     def register_hook(self, name, fn):
         self.hooks[name] = fn
+
+    def register_skill(self, name, path, description="", frontmatter=None):
+        self.skills[name] = (Path(path), description)
+
+
+class _OldCtx(_FakeCtx):
+    register_skill = None
 
 
 class PluginTests(unittest.TestCase):
@@ -192,6 +199,49 @@ class PluginTests(unittest.TestCase):
                 mock.patch.object(self.plugin.logger, "warning") as warn:
             self.assertEqual(self.ctx.sections["skill-branches.tree"][0]({}), "")
         self.assertEqual(warn.call_count, 1)
+
+    def test_register_adds_setup_skill_with_its_description(self):
+        path, description = self.ctx.skills["setup"]
+        self.assertEqual(path, ROOT / "skills" / "setup" / "SKILL.md")
+        self.assertTrue(path.is_file())
+        self.assertEqual(description, _frontmatter(path)["description"])
+
+    def test_register_survives_a_host_without_plugin_skills(self):
+        ctx = _OldCtx()
+        with mock.patch.object(self.plugin.logger, "warning") as warn:
+            self.plugin.register(ctx)
+        self.assertIn("pre_llm_call", ctx.hooks)
+        self.assertIn("skill-branches.tree", ctx.sections)
+        self.assertEqual(warn.call_count, 1)
+
+
+def _frontmatter(path):
+    text = path.read_text(encoding="utf-8")
+    head = text.split("\n---\n", 1)[0]
+    return {k.strip(): v.strip().strip('"') for k, v in (line.split(":", 1) for line in head.splitlines()[1:] if ":" in line)}
+
+
+class SetupSkillTests(unittest.TestCase):
+    PATH = ROOT / "skills" / "setup" / "SKILL.md"
+
+    def test_frontmatter(self):
+        text = self.PATH.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("---\n"))
+        fm = _frontmatter(self.PATH)
+        self.assertEqual(fm["name"], "setup")
+        self.assertLessEqual(len(fm["description"]), 60)
+        self.assertTrue(fm["description"].endswith("."))
+        self.assertEqual(fm["author"], "Muhammed Enes Alpler")
+
+    def test_nothing_from_the_authors_setup(self):
+        text = self.PATH.read_text(encoding="utf-8").lower()
+        for word in ("software-dev", "review-loop", "abap", "hermes-desktop-plugin-authoring", "enesa", "c:\\", "/users/"):
+            self.assertNotIn(word, text)
+
+    def test_names_the_file_and_the_approval_step(self):
+        text = self.PATH.read_text(encoding="utf-8")
+        self.assertIn("branches.json", text)
+        self.assertIn("approve", text.lower())
 
 
 if __name__ == "__main__":

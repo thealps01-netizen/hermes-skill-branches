@@ -5,13 +5,15 @@ Native Hermes plugin with a read-only desktop page. `__init__.py` registers one 
 one-sentence directive on every turn). `branches.py` loads and validates the branch file and renders
 both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
 serves `GET /tree` (that inspection) to `desktop/plugin.js`, the page; skills come from the host SDK.
+`skills/setup/SKILL.md` is the bundled guided-setup skill (`skill-branches:setup`), registered in
+`__init__.py`; the page's missing-file banner asks the assistant to load it.
 `README.md` explains behaviour, the file format and limits.
 
 ## Setup (fresh checkout)
 - Python 3.11+, standard library only. No `pip install`.
 - Node 20+; run `npm ci` once in `tests/` (React and jsdom, pinned to the core desktop app's versions).
-- The branch file lives at `<hermes home>/plugin-data/skill-branches/branches.json`; copy
-  `branches.example.json` there and edit it. Unit tests do not need it.
+- The branch file lives at `<hermes home>/plugin-data/skill-branches/branches.json`; the setup skill
+  writes it with the user, or copy `branches.example.json` there and edit it. Unit tests do not need it.
 
 ## Validation (run all after any change; each must pass)
 ```bash
@@ -40,6 +42,7 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
   key, `seen`, records the skills present when the branch file last changed.
 - Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
   no text under 12px; one animation, off under `prefers-reduced-motion`. `render_check.mjs` locks these.
+- The setup skill carries only general, measured lessons; never the author's branches or skill names.
 - A change to the directive or section wording is re-measured with the routing test (README →
   Measurement) before release.
 

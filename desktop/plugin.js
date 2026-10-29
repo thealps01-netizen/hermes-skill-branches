@@ -19,7 +19,9 @@ const en = {
     invalidTitle: 'Branch file is invalid — routing is off',
     invalidBody: 'Chats get no branch list until it is fixed. The file:',
     missingTitle: 'No branch file — routing is off',
-    missingBody: 'Create it to turn routing on; branches.example.json in the plugin folder shows the format. The file goes here:',
+    missingBody: 'The assistant can set it up with you: it asks about your work, shows a draft, and writes it only after you approve. The file goes here:',
+    setup: 'Set up with the assistant',
+    setupText: 'Load skill-branches:setup and help me set up my skill branches.',
     ignoredTitle: 'Some fields are ignored',
     ignoredBody: 'Routing reads "group" and "branches" at the top, and "name", "description" and "skills" on a branch. Nested branches are not supported; these fields have no effect:',
     turn: 'Turn',
@@ -207,11 +209,30 @@ function Sprout() {
     h('path', { d: 'M8 8C8 4.6 10.2 2 14.5 2C14.5 5.4 12.2 8 8 8Z', fill: 'var(--ui-accent)', opacity: 0.7 }))
 }
 
-function Banner({ tone, title, body, detail, items }) {
+function Banner({ tone, title, body, detail, items, action }) {
   return h('div', { className: `skb-banner skb-${tone}`, role: tone === 'bad' ? 'alert' : 'status' },
     h('b', null, title), h('p', null, body),
     detail ? h('p', null, detail) : null,
-    items ? h('ul', null, items.map(x => h('li', { key: x }, x))) : null)
+    items ? h('ul', null, items.map(x => h('li', { key: x }, x))) : null,
+    action || null)
+}
+
+// Puts a request in the chat box for the user to send; falls back to the clipboard.
+async function sendToChat(ctx, text) {
+  try {
+    if (await host.composer?.insertText?.(null, text, { mode: 'block' })) return 'inserted'
+  } catch {}
+  try {
+    if (await ctx.os?.writeClipboard?.(text)) return 'copied'
+  } catch {}
+  return 'failed'
+}
+
+function SetupButton({ ctx, t }) {
+  const [sent, setSent] = useState(null)
+  const label = { inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
+  return h('p', null, h('button', { type: 'button', className: 'skb-ask', onClick: async () => setSent(await sendToChat(ctx, t('skb.setupText'))) },
+    sent ? label[sent] : t('skb.setup')))
 }
 
 function Tree({ ctx, tree, skills, seen, t }) {
@@ -254,16 +275,7 @@ function Tree({ ctx, tree, skills, seen, t }) {
   const nameWidth = `${Math.min(18, Math.max(5, ...m.branches.map(b => b.name.length)) + 1)}ch`
 
   const ask = async name => {
-    const text = t('skb.askText', name)
-    let state = 'failed'
-    try {
-      if (await host.composer?.insertText?.(null, text, { mode: 'block' })) state = 'inserted'
-    } catch {}
-    if (state !== 'inserted') {
-      try {
-        if (await ctx.os?.writeClipboard?.(text)) state = 'copied'
-      } catch {}
-    }
+    const state = await sendToChat(ctx, t('skb.askText', name))
     setAsked(a => ({ ...a, [name]: state }))
   }
   const askLabel = { inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
@@ -398,7 +410,7 @@ function createPage(ctx) {
     else {
       body = h(Fragment, null,
         tree.state === 'invalid' ? jsx(Banner, { tone: 'bad', title: t('skb.invalidTitle'), body: t('skb.invalidBody'), detail: tree.path, items: [tree.problem] }) : null,
-        tree.state === 'missing' ? jsx(Banner, { tone: 'info', title: t('skb.missingTitle'), body: t('skb.missingBody'), detail: tree.path }) : null,
+        tree.state === 'missing' ? jsx(Banner, { tone: 'info', title: t('skb.missingTitle'), body: t('skb.missingBody'), detail: tree.path, action: jsx(SetupButton, { ctx, t }) }) : null,
         tree.state === 'ok' && tree.ignored?.length ? jsx(Banner, { tone: 'warn', title: t('skb.ignoredTitle'), body: t('skb.ignoredBody'), items: tree.ignored }) : null,
         jsx(Tree, { ctx, tree, skills, seen, t }))
     }
