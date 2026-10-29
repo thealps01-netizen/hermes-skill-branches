@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 const ID = 'skill-branches'
 const PATH = '/skill-branches'
 const MAX_FOLDERS = 8
+const SEEN_VERSION = 2
 
 const plural = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
 
@@ -183,11 +184,18 @@ function Hl({ text, q }) {
   return jsxs(Fragment, { children: [text.slice(0, i), h('mark', null, text.slice(i, i + q.length)), text.slice(i + q.length)] })
 }
 
+export function mergeSkills(hostSkills, pluginSkills) {
+  const names = new Set(hostSkills.map(s => s.name))
+  const extra = (Array.isArray(pluginSkills) ? pluginSkills : []).filter(s => !names.has(s.name))
+  return [...hostSkills, ...extra.map(s => ({ ...s, enabled: true, plugin: true }))]
+}
+
 export function buildModel(tree, skills, seen) {
   const installed = new Map(skills.map(s => [s.name, s]))
   const branches = tree.state === 'ok' ? tree.branches : []
   const onBranch = new Set(branches.flatMap(b => b.skills))
-  const known = seen && seen.modified === tree.modified && Array.isArray(seen.names) ? new Set(seen.names) : null
+  const pluginNames = seen?.v === SEEN_VERSION ? [] : skills.filter(s => s.plugin).map(s => s.name)
+  const known = seen && seen.modified === tree.modified && Array.isArray(seen.names) ? new Set([...seen.names, ...pluginNames]) : null
   const fresh = known ? skills.map(s => s.name).filter(n => !known.has(n) && !onBranch.has(n)).sort() : []
   const byFolder = new Map()
   for (const s of skills) {
@@ -395,12 +403,14 @@ function createPage(ctx) {
     const skillsQ = useQuery({ queryKey: [ID, 'skills'], queryFn: () => host.skills.list() })
     const [seen] = useState(() => ctx.storage.get('seen', null))
     const tree = treeQ.data
-    const skills = Array.isArray(skillsQ.data) ? skillsQ.data : null
+    const skills = Array.isArray(skillsQ.data) && tree ? mergeSkills(skillsQ.data, tree.plugin_skills) : null
     useEffect(() => {
       if (!tree || !skills) return
       const stored = ctx.storage.get('seen', null)
-      if (!stored || stored.modified !== tree.modified) ctx.storage.set('seen', { modified: tree.modified, names: skills.map(s => s.name) })
-    }, [tree, skills])
+      if (!stored || stored.modified !== tree.modified || stored.v !== SEEN_VERSION) {
+        ctx.storage.set('seen', { v: SEEN_VERSION, modified: tree.modified, names: skills.map(s => s.name) })
+      }
+    }, [tree, skillsQ.data])
 
     const detail = err => (err && err.message) || String(err)
     let body

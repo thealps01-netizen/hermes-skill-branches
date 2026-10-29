@@ -6,6 +6,8 @@ It never reads the real branch file: every request is pointed at a temporary one
 """
 import importlib.util
 import json
+import sys
+import types
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,6 +32,9 @@ class ApiTests(unittest.TestCase):
         patcher = mock.patch.object(api, "_tree_path", lambda: self.file)
         patcher.start()
         self.addCleanup(patcher.stop)
+        host = _fake_host([])  # never the real plugin discovery: it would load the real home's plugins
+        host.start()
+        self.addCleanup(host.stop)
         app = FastAPI()
         app.include_router(api.router, prefix=PREFIX)
         self.client = TestClient(app)
@@ -68,6 +73,36 @@ class ApiTests(unittest.TestCase):
         self.get()
         self.assertEqual((self.file.read_bytes(), self.file.stat().st_mtime_ns), before)
         self.assertEqual(self.client.post(f"{PREFIX}/tree").status_code, 405)
+
+
+    def test_plugin_skills_listed_by_namespace_without_disabled_ones(self):
+        rows = [{"name": "toolkit:helper", "description": "Helps."}, {"name": "toolkit:off", "description": "Off."},
+                {"name": "bare", "description": "No namespace."}]
+        with _fake_host(rows, disabled={"toolkit:off"}):
+            got = self.get()
+        self.assertEqual(got["plugin_skills"], [{"name": "toolkit:helper", "description": "Helps.", "category": "toolkit"}])
+
+    def test_plugin_skills_failure_keeps_the_tree_with_one_warning(self):
+        self.file.write_text(json.dumps(TREE), encoding="utf-8")
+        with _fake_host(RuntimeError("secret detail")), mock.patch.object(api.logger, "warning") as warn:
+            got = self.get()
+        self.assertEqual((got["state"], got["plugin_skills"]), ("ok", []))
+        self.assertEqual(warn.call_count, 1)
+        self.assertNotIn("secret detail", str(warn.call_args))
+
+
+def _fake_host(rows, disabled=()):
+    """Stand-ins for the three Hermes modules the route reads plugin skills from."""
+    def listing():
+        if isinstance(rows, Exception):
+            raise rows
+        return rows
+    manager = types.SimpleNamespace(list_plugin_skill_metadata=listing)
+    plugins = types.SimpleNamespace(discover_plugins=lambda: None, get_plugin_manager=lambda: manager)
+    config = types.SimpleNamespace(load_config=lambda: {})
+    skills_config = types.SimpleNamespace(get_disabled_skills=lambda cfg: set(disabled))
+    return mock.patch.dict(sys.modules, {"hermes_cli": types.ModuleType("hermes_cli"), "hermes_cli.plugins": plugins,
+                                         "hermes_cli.config": config, "hermes_cli.skills_config": skills_config})
 
 
 if __name__ == "__main__":

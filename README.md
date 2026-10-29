@@ -13,8 +13,8 @@ on every turn, to name the area of the request first did.
   `none`) before its first tool call, then load with `skill_view` the skills of that branch that apply.
 - It never loads a skill itself; the model picks within the branch.
 - **Desktop page:** a "Skill branches" row in the app's sidebar opens a read-only view: the branches
-  and their skills, every other installed skill as a seed grouped by folder, a tile map of all of
-  them, and search over names and descriptions. It warns when the branch file is invalid (routing
+  and their skills, every other installed skill as a seed grouped by folder (a plugin's skills in a
+  folder named after the plugin), a tile map of all of them, and search over names and descriptions. It warns when the branch file is invalid (routing
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
   that are not installed, and lists skills that arrived since the branch file last changed with an
   "Ask the assistant" button that writes a request into the chat box. It never writes a file.
@@ -41,8 +41,8 @@ format, for reading or hand-editing:
   Research on tool routing found an extra selection level hurts at this size (each level is a
   chance to pick wrong with no way back), so nesting is worth re-measuring only past about 20–30
   branches or when branch descriptions overlap.
-- Skill names are not checked against installed skills: a wrong name makes `skill_view` answer
-  "not found" and the model moves on. Checking would need private Hermes internals.
+- Chats do not check skill names against installed skills: a wrong name makes `skill_view` answer
+  "not found" and the model moves on. The desktop page marks such names as not installed.
 - The section is frozen when a session starts (Hermes keeps the system prompt stable for caching);
   file edits reach new sessions. The per-turn sentence re-reads the file every turn.
 
@@ -50,6 +50,10 @@ format, for reading or hand-editing:
 
 - The model can still ignore the instruction; the rate is what the measurement below reports.
 - Per-turn cost: the directive is about 250 characters, injected into every user turn, uncached.
+- The app's skill list has no plugin skills (`plugin:skill` names), so the page asks Hermes' plugin
+  manager for them (`list_plugin_skill_metadata`, the source the chat's skill index uses). That is
+  an internal Hermes API: if it changes, the page logs one warning and shows only the app's list,
+  and a plugin skill on a branch then shows as not installed. Chats are not affected.
 - The setup skill's one-line entry joins the skill index of every session (about 20 tokens); its
   body loads only when setup is asked for. On a Hermes without plugin skills, routing still works
   and only guided setup is missing (one warning in the log).

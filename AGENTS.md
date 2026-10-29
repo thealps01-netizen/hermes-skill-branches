@@ -4,7 +4,8 @@ Native Hermes plugin with a read-only desktop page. `__init__.py` registers one 
 (`skill-branches.tree`, the branch list, rendered once per new session) and one `pre_llm_call` hook (a
 one-sentence directive on every turn). `branches.py` loads and validates the branch file and renders
 both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
-serves `GET /tree` (that inspection) to `desktop/plugin.js`, the page; skills come from the host SDK.
+serves `GET /tree` (that inspection, plus the enabled plugin skills from Hermes' plugin manager) to
+`desktop/plugin.js`, the page; the other skills come from the host SDK.
 `skills/setup/SKILL.md` is the bundled guided-setup skill (`skill-branches:setup`), registered in
 `__init__.py`; the page's missing-file banner asks the assistant to load it.
 `README.md` explains behaviour, the file format and limits.

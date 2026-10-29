@@ -31,7 +31,25 @@ def tree_payload(path=None):
         logger.warning("skill-branches: panel could not check the branch file (%s)", type(exc).__name__)
         info = {"state": "invalid", "problem": "The branch file could not be checked.", "group": "",
                 "branches": [], "ignored": [], "modified": None, "path": str(path or "")}
-    return {k: v for k, v in info.items() if k != "error"}
+    payload = {k: v for k, v in info.items() if k != "error"}
+    payload["plugin_skills"] = _plugin_skills()
+    return payload
+
+
+def _plugin_skills():
+    try:
+        from hermes_cli.config import load_config
+        from hermes_cli.plugins import discover_plugins, get_plugin_manager
+        from hermes_cli.skills_config import get_disabled_skills
+        discover_plugins()
+        disabled = get_disabled_skills(load_config())
+        rows = get_plugin_manager().list_plugin_skill_metadata()
+    except Exception as exc:
+        logger.warning("skill-branches: panel could not list plugin skills (%s)", type(exc).__name__)
+        return []
+    names = [(str(r.get("name") or ""), str(r.get("description") or "")) for r in rows]
+    return [{"name": n, "description": d, "category": n.split(":", 1)[0]}
+            for n, d in names if ":" in n and n not in disabled]
 
 
 @router.get("/tree")
