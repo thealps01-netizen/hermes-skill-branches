@@ -122,7 +122,7 @@ const CSS = `
 .skb-sk span{color:var(--ui-text-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .skb-sk li.skb-miss b{color:var(--ui-text-secondary)}.skb-sk li.skb-miss b::before{background:none;border:1px solid var(--h);box-sizing:border-box}
 .skb-sk li.skb-miss span{font-style:italic}
-.skb .skb-add{display:grid;place-items:center;justify-self:end;width:20px;height:18px;margin-right:-6px;padding:0;border-radius:5px;color:var(--ui-text-secondary);opacity:0;transition:opacity 120ms cubic-bezier(.2,0,.38,.9),background-color 120ms cubic-bezier(.2,0,.38,.9)}
+.skb .skb-add{display:grid;place-items:center;justify-self:end;width:24px;height:24px;margin:-3px -8px -3px 0;padding:0;border-radius:5px;color:var(--ui-text-secondary);opacity:0;transition:opacity 120ms cubic-bezier(.2,0,.38,.9),background-color 120ms cubic-bezier(.2,0,.38,.9)}
 .skb-sk li:hover .skb-add,.skb-sk li:focus-within .skb-add,.skb .skb-add[data-sent]{opacity:1}
 .skb .skb-add:hover{color:var(--ui-text-primary);background:color-mix(in srgb,var(--ui-text-primary) 9%,transparent)}
 .skb .skb-add[data-sent]{color:var(--ui-text-primary)}
@@ -190,9 +190,9 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.skb *{animation:none!important;transition:none!important}}
 `
 
-// Plus (add), minus (remove) or check (request sent): drawn, in the text colour.
+// Plus (add), minus (remove), check (request sent or copied) or warning mark (failed): drawn, in the text colour.
 function ActIcon ({ kind }) {
-  const d = { add: 'M6 2.5v7M2.5 6h7', remove: 'M2.5 6h7', sent: 'M2.5 6.3 5 8.6l4.5-5.2' }[kind]
+  const d = { add: 'M6 2.5v7M2.5 6h7', remove: 'M2.5 6h7', sent: 'M2.5 6.3 5 8.6l4.5-5.2', failed: 'M6 2.5v4.2M6 9.2v.3' }[kind]
   return h('svg', { width: 12, height: 12, viewBox: '0 0 12 12', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' }, h('path', { d }))
 }
 
@@ -357,7 +357,7 @@ function Tree({ ctx, tree, skills, seen, t }) {
   // Row buttons are icons in their own column; the label is the tooltip, the full name is for screen readers.
   const rowButton = (key, className, label, name, onClick, icon) => h('button', {
     type: 'button', className, title: asked[key] ? askLabel[asked[key]] : label, 'aria-label': name, ...sentKey(key), onClick
-  }, jsx(ActIcon, { kind: asked[key] === 'opened' || asked[key] === 'inserted' ? 'sent' : icon }))
+  }, jsx(ActIcon, { kind: asked[key] === 'failed' ? 'failed' : asked[key] ? 'sent' : icon }))
   const addButton = name => rowButton(name, 'skb-add', t('skb.add'), t('skb.askLabel', name), () => ask(name), 'add')
   const skillRow = (name, extraClass, text, action) => h('li', {
     key: name,

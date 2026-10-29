@@ -123,6 +123,7 @@ const restCalls = []
 const storage = new Map()
 const storageWrites = []
 const clipboard = []
+let clipboardWorks = true
 let treeAnswer = null
 const ctx = {
   register: c => { registered.push(c); return () => {} },
@@ -139,7 +140,7 @@ const ctx = {
     remove: k => { storageWrites.push(k); storage.delete(k) }
   },
   setTimeout: (fn, ms) => { const id = setTimeout(fn, ms); return () => clearTimeout(id) },
-  os: { writeClipboard: async text => { clipboard.push(text); return true } }
+  os: { writeClipboard: async text => { if (!clipboardWorks) return false; clipboard.push(text); return true } }
 }
 
 // ── fixtures (neutral names) ────────────────────────────────────────────────
@@ -367,6 +368,14 @@ stub.state.insertResult = false
 await act(async () => { $$(el, '.skb-addrow button')[0].click(); await new Promise(r => setTimeout(r, 2500)) })
 check(clipboard.at(-1) === 'Load skill-branches:setup and help me add a skill to my alpha skill branch; ask me which one.' && stub.calls.notify.at(-1)?.kind === 'warning' && stub.calls.notify.at(-1)?.message === 'Copied the request. Paste it into the chat box and send it.', 'no chat box answers: copied, and a notice says so')
 check(stub.calls.insert.length > 1 && stub.calls.insert.length <= 12, `gives up after a bounded wait (${stub.calls.insert.length} tries)`)
+const rowRm = $(el, '.skb-br button.skb-rm')
+await act(async () => { rowRm.click(); await new Promise(r => setTimeout(r, 2500)) })
+check(rowRm.title === 'Copied — paste it into a chat' && $(rowRm, 'path')?.getAttribute('d') === 'M2.5 6.3 5 8.6l4.5-5.2', 'a copied request also shows the check')
+clipboardWorks = false
+const rowRm2 = $$(el, '.skb-br button.skb-rm')[1]
+await act(async () => { rowRm2.click(); await new Promise(r => setTimeout(r, 2500)) })
+check(rowRm2.title === 'Could not copy' && $(rowRm2, 'path')?.getAttribute('d') === 'M6 2.5v4.2M6 9.2v.3', 'a failed request shows a warning mark')
+clipboardWorks = true
 stub.state.insertResult = true
 stub.state.lostDrafts = 1
 stub.calls.insert.length = 0
@@ -431,6 +440,7 @@ check((cssText.match(/@keyframes/g) || []).length === 1, 'one animation')
 check(!/content:"[^"\s]+"/.test(cssText), 'no typed glyph stands in for an icon')
 const actRule = cssText.match(/\.skb \.skb-add\{([^}]*)\}/)?.[1] ?? ''
 check(actRule !== '' && !/position:absolute/.test(actRule), 'row buttons sit in their own column and never cover the description')
+check(/width:24px/.test(actRule) && /height:24px/.test(actRule), 'row buttons have a 24px target')
 check(/@media \(hover:none\)\{[^}]*\.skb-add[^}]*opacity:1/.test(cssText), 'on touch screens the row buttons are always shown')
 check(reactWarnings.length === 0, `React logged no warning${reactWarnings.length ? `: ${reactWarnings[0].slice(0, 300)}` : ''}`)
 
