@@ -16,8 +16,11 @@ on every turn, to name the area of the request first did.
   and their skills, every other installed skill as a seed grouped by folder (a plugin's skills in a
   folder named after the plugin), a tile map of all of them, and search over names and descriptions. It warns when the branch file is invalid (routing
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
-  that are not installed, and lists skills that arrived since the branch file last changed with an
-  "Ask the assistant" button that writes a request into the chat box. It never writes a file.
+  that are not installed, and lists skills that arrived since the branch file last changed.
+- **Adding skills by hand:** each branch ends with "Add a skill to <branch>", and each seed row has
+  "Add to a branch" (shown on hover or keyboard focus). Both put a request into the chat box; you
+  send it, the assistant shows the change before and after, and writes it only after you approve.
+  The page itself never writes a file.
 - **Guided setup:** ships one skill, `skill-branches:setup`. When the branch file is missing the
   page offers "Set up with the assistant", which puts a request to load it into the chat box. The
   assistant lists your installed skills, asks what work you do, shows a draft file with a reason per

@@ -35,7 +35,10 @@ const en = {
     newTitle: 'New since the branch file last changed',
     ask: 'Ask the assistant',
     askLabel: name => `Ask the assistant which branch ${name} belongs on`,
-    askText: name => `Put the ${name} skill on a skill branch; suggest which one and why.`,
+    askText: name => `Load skill-branches:setup and help me put the ${name} skill on one of my skill branches; suggest which one and why.`,
+    add: 'Add to a branch',
+    addTo: name => `Add a skill to ${name}`,
+    addToText: name => `Load skill-branches:setup and help me add a skill to my ${name} skill branch; ask me which one.`,
     askInserted: 'Added to the chat box',
     askCopied: 'Copied — paste it into a chat',
     askFailed: 'Could not copy',
@@ -110,6 +113,13 @@ const CSS = `
 .skb-sk span{color:var(--ui-text-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .skb-sk li.skb-miss b{color:var(--ui-text-secondary)}.skb-sk li.skb-miss b::before{background:none;border:1px solid var(--h);box-sizing:border-box}
 .skb-sk li.skb-miss span{font-style:italic}
+.skb .skb-add{position:absolute;right:6px;top:3px;background:var(--ground);opacity:0;font-size:12px;font-weight:600;line-height:18px;padding:0 7px;border:1px solid var(--ui-stroke-secondary);border-radius:6px;white-space:nowrap;transition:opacity 120ms cubic-bezier(.2,0,.38,.9)}
+.skb-sk li:hover .skb-add,.skb-sk li:focus-within .skb-add,.skb .skb-add[data-sent]{opacity:1}
+.skb .skb-add:hover{background:color-mix(in srgb,var(--ui-text-primary) 7%,var(--ground))}
+.skb .skb-addrow{display:block}
+.skb .skb-addrow button{font-size:12.5px;font-weight:600;color:var(--ui-text-secondary);padding:0 6px;margin-left:-6px;border-radius:6px;line-height:18px}
+.skb .skb-addrow button::before{content:"+";display:inline-block;width:10px;margin-right:6px;font-weight:600}
+.skb .skb-addrow button:hover{color:var(--ui-text-primary);background:color-mix(in srgb,var(--ui-text-primary) 6%,transparent)}
 .skb-sk li.skb-nw b::before{background:none;border:1.5px dashed var(--ui-accent);box-sizing:border-box;width:7px;height:7px}
 .skb-seeds{margin-top:22px;--h:var(--ui-text-tertiary)}
 .skb-seeds>.skb-turn{margin-bottom:2px}
@@ -282,9 +292,9 @@ function Tree({ ctx, tree, skills, seen, t }) {
   const folderName = cat => cat || t('skb.noFolder')
   const nameWidth = `${Math.min(18, Math.max(5, ...m.branches.map(b => b.name.length)) + 1)}ch`
 
-  const ask = async name => {
-    const state = await sendToChat(ctx, t('skb.askText', name))
-    setAsked(a => ({ ...a, [name]: state }))
+  const ask = async (key, text) => {
+    const state = await sendToChat(ctx, text || t('skb.askText', key))
+    setAsked(a => ({ ...a, [key]: state }))
   }
   const askLabel = { inserted: t('skb.askInserted'), copied: t('skb.askCopied'), failed: t('skb.askFailed') }
 
@@ -306,12 +316,22 @@ function Tree({ ctx, tree, skills, seen, t }) {
     if (e.key === 'Enter') mainRef.current.querySelector('.skb-sk li')?.scrollIntoView?.({ block: 'center' })
   }
 
-  const skillRow = (name, extraClass, text) => h('li', {
+  const sentKey = key => (asked[key] ? { 'data-sent': '' } : {})
+  const addButton = name => h('button', {
+    type: 'button', className: 'skb-add', 'aria-label': t('skb.askLabel', name), ...sentKey(name), onClick: () => ask(name)
+  }, asked[name] ? askLabel[asked[name]] : t('skb.add'))
+  const skillRow = (name, extraClass, text, action) => h('li', {
     key: name,
     className: [extraClass, hov === name ? 'skb-lit' : ''].filter(Boolean).join(' '),
     onMouseEnter: () => setHov(name),
     onMouseLeave: () => setHov(null)
-  }, h('b', null, jsx(Hl, { text: name, q: ql })), h('span', { title: text }, jsx(Hl, { text, q: ql })))
+  }, h('b', null, jsx(Hl, { text: name, q: ql })), h('span', { title: text }, jsx(Hl, { text, q: ql })), action || null)
+  const addRow = b => {
+    const key = `branch:${b.name}`
+    return h('li', { key, className: 'skb-addrow' }, h('button', {
+      type: 'button', onClick: () => ask(key, t('skb.addToText', b.name))
+    }, asked[key] ? askLabel[asked[key]] : t('skb.addTo', b.name)))
+  }
 
   const branchList = h('div', { className: 'skb-bs', style: { '--nw': nameWidth } }, rows.filter(r => r.visible).map(r => h('div', {
     key: r.b.name, id: `${uid}b${r.i}`, className: `skb-br skb-k${(r.i % 6) + 1}${r.isOpen ? ' skb-open' : ''}`
@@ -323,7 +343,8 @@ function Tree({ ctx, tree, skills, seen, t }) {
   h('span', { className: 'skb-d', title: r.b.description }, jsx(Hl, { text: r.b.description, q: ql })),
   h('em', null, String(r.b.skills.length)), h('i', { className: 'skb-chev' })),
   h('ul', { className: 'skb-sk', id: `${uid}l${r.i}`, 'aria-label': t('skb.skillsOn', r.b.name), hidden: !r.isOpen },
-    r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s)) : skillRow(s, 'skb-miss', t('skb.notInstalled')))))))
+    r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s)) : skillRow(s, 'skb-miss', t('skb.notInstalled'))),
+    ql ? null : addRow(r.b)))))
 
   const sprouts = freshShown.length ? h(Fragment, null,
     h('p', { className: 'skb-newh' }, t('skb.newTitle')),
@@ -338,7 +359,7 @@ function Tree({ ctx, tree, skills, seen, t }) {
       onClick: () => toggle(setFolds, f.cat)
     }, h('i', { className: 'skb-dot' }), h('span', { className: 'skb-n' }, folderName(f.cat)), h('em', null, String(f.names.length)), h('i', { className: 'skb-chev' })),
     h('ul', { className: 'skb-sk', id: `${uid}m${f.idx}`, 'aria-label': folderName(f.cat), hidden: !f.isOpen },
-      f.shown.map(n => skillRow(n, fresh.has(n) ? 'skb-nw' : '', desc(n)))))))
+      f.shown.map(n => skillRow(n, fresh.has(n) ? 'skb-nw' : '', desc(n), addButton(n)))))))
 
   let delay = 0
   const tiles = (names, cls) => h('span', { className: 'skb-tiles', style: { gridTemplateColumns: `repeat(${ncol(names.length)},14px)` } },
