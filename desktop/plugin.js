@@ -401,10 +401,17 @@ function Pop({ anchor, label, onClose, children }) {
     const left = Math.max(12, Math.min(wide ? a.left - r.left - 6 : a.right - r.left - w + 6, r.width - w - 12))
     setPos({ top: a.bottom - r.top + 8, left, ar: Math.max(14, Math.min(w - 26, a.left - r.left - left + Math.min(a.width / 2, 16) - 5)) })
   }, [anchor])
+  // Focus and scroll only once the popover sits under its button; hidden, it can take neither.
+  const placed = useRef(false)
   useEffect(() => {
     const el = ref.current
+    if (!pos || placed.current || !el) return
+    placed.current = true
     ;(el.querySelector('[data-autofocus]') || el.querySelector('input,textarea,button'))?.focus({ preventScroll: true })
     el.scrollIntoView?.({ block: 'nearest' })
+  }, [pos])
+  useEffect(() => {
+    const el = ref.current
     const down = e => { if (!el.contains(e.target) && !anchor?.contains?.(e.target)) onClose(false) }
     document.addEventListener('mousedown', down)
     return () => document.removeEventListener('mousedown', down)
@@ -461,10 +468,23 @@ function Tree({ ctx, tree, skills, refresh, t }) {
   // ── edits: one popover at a time; the change goes to the plugin's own route, never to a chat ──
   const openPop = (e, spec) => { const anchor = e.currentTarget; setPop(p => (p?.key === spec.key ? null : { ...spec, anchor, problem: null })) }
   const upd = patch => setPop(p => (p ? { ...p, ...patch } : p))
-  const closePop = refocus => setPop(p => {
+  const popRef = useRef(null)
+  popRef.current = pop
+  const closePop = refocus => {
+    const p = popRef.current
+    setPop(null)
     if (refocus && p?.anchor?.isConnected) ctx.setTimeout(() => p.anchor.focus({ preventScroll: true }), 0)
-    return null
-  })
+  }
+  // After a save the button that opened the popover may be gone (a removed row, a renamed branch):
+  // focus goes to it if it is still there, else to the branch's head, else to the first one.
+  const refocusAfterSave = (anchor, branch) => ctx.setTimeout(() => {
+    const now = document.activeElement
+    if (popRef.current || (now && now !== document.body && now.isConnected)) return
+    const heads = [...(mainRef.current?.querySelectorAll('.skb-br') || [])]
+    const head = heads.find(x => x.querySelector('.skb-n')?.textContent === branch) || heads[0]
+    const target = anchor?.isConnected ? anchor : head?.querySelector('.skb-tog')
+    target?.focus({ preventScroll: true })
+  }, 0)
   const save = async req => {
     if (busy) return
     setBusy(true)
@@ -476,6 +496,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       res = { ok: false, problem: t('skb.saveFailed', (err && err.message) || String(err)) }
     }
     setBusy(false)
+    const anchor = popRef.current?.anchor
     if (res?.ok) {
       closePop(false)
       try { host.notify?.({ kind: 'success', message: t('skb.saved') }) } catch {}
@@ -483,6 +504,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       upd({ problem: res?.problem || t('skb.saveFailed', 'no answer') })
     }
     await refresh()
+    if (res?.ok) refocusAfterSave(anchor, req.name || req.branch)
   }
 
   const preview = (k, label, names, mark, head) => {
@@ -570,7 +592,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
           h('input', { type: 'text', 'data-autofocus': '', value: name, spellCheck: false, autoComplete: 'off', 'aria-invalid': String(nameBad || taken), onChange: e => upd({ name: e.target.value, problem: null }) }),
           h('small', { 'aria-live': 'polite' }, taken ? t('skb.nameTaken', name) : nameBad ? t('skb.nameBad') : t('skb.nameHint'))),
         h('label', { className: 'skb-fl' }, h('span', { className: 'skb-lbl' }, t('skb.descLabel')),
-          h('textarea', { rows: 2, value: pop.desc || '', onChange: e => upd({ desc: e.target.value, problem: null }) }),
+          h('textarea', { rows: 2, maxLength: 300, value: pop.desc || '', onChange: e => upd({ desc: e.target.value, problem: null }) }),
           h('small', null, t('skb.descHint'))),
         h('span', { className: 'skb-lbl' }, `${t('skb.skillsLabel')} · ${t('skb.picked', picks.length)}`),
         h('input', { type: 'search', value: pop.q || '', placeholder: t('skb.addFind'), 'aria-label': t('skb.addFind'), onChange: e => upd({ q: e.target.value }) }),
@@ -590,7 +612,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       }
       const name = pop.name ?? b.name
       const d = pop.desc ?? b.description
-      const nameBad = !NAME_RE.test(name)
+      const nameBad = name !== b.name && !NAME_RE.test(name)
       const taken = m.branches.some(x => x !== b && x.name.toLowerCase() === name.toLowerCase())
       const changed = name !== b.name || d.trim() !== b.description
       return [t('skb.editTitle', b.name), h(Fragment, null,
@@ -599,7 +621,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
           h('input', { type: 'text', 'data-autofocus': '', value: name, spellCheck: false, autoComplete: 'off', 'aria-invalid': String(nameBad || taken), onChange: e => upd({ name: e.target.value, problem: null }) }),
           h('small', { 'aria-live': 'polite' }, taken ? t('skb.nameTaken', name) : nameBad ? t('skb.nameBad') : t('skb.nameHint'))),
         h('label', { className: 'skb-fl' }, h('span', { className: 'skb-lbl' }, t('skb.descLabel')),
-          h('textarea', { rows: 3, value: d, onChange: e => upd({ desc: e.target.value, problem: null }) }),
+          h('textarea', { rows: 3, maxLength: 300, value: d, onChange: e => upd({ desc: e.target.value, problem: null }) }),
           h('small', null, t('skb.descHint'))),
         problem,
         footer(() => save({ op: 'edit', branch: b.name, name, description: d }), t('skb.saveGo'), changed && !nameBad && !taken && !!d.trim(), false,
@@ -607,12 +629,10 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     }
     return null
   }
-  const popNode = () => {
-    if (!pop) return null
-    const got = popBody()
-    if (!got) return null
-    return h(Pop, { key: pop.key, anchor: pop.anchor, label: got[0], onClose: closePop, children: got[1] })
-  }
+  // A popover whose branch or skill vanished (the file changed elsewhere) closes itself.
+  const popGot = pop ? popBody() : null
+  useEffect(() => { if (pop && !popGot) setPop(null) })
+  const popNode = () => (popGot ? h(Pop, { key: pop.key, anchor: pop.anchor, label: popGot[0], onClose: closePop, children: popGot[1] }) : null)
 
   const onTreeKey = e => {
     if (!e.target.classList?.contains('skb-tog')) return

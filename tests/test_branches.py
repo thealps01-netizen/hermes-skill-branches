@@ -1,6 +1,7 @@
 """Unit tests for skill-branches. Run from the repo root: PYTHONUTF8=1 python -m unittest discover -s tests"""
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -376,6 +377,53 @@ class ChangeTests(unittest.TestCase):
         self.assertEqual(self.file.read_bytes(), before)
         self.assertEqual(warn.call_count, 1)
         self.assertNotIn("disk full", str(warn.call_args))
+
+    def test_edit_keeps_a_name_and_text_the_file_already_had(self):
+        legacy = {"branches": [{"name": "Code Review", "description": "x" * 400, "skills": ["s"]}]}
+        self.file.write_text(json.dumps(legacy), encoding="utf-8")
+        self.assertTrue(self.change(op="edit", branch="Code Review", name="Code Review", description="Short now.")["ok"])
+        self.assertTrue(self.change(op="edit", branch="Code Review", name="code-review", description="Short now.")["ok"])
+        self.file.write_text(json.dumps(legacy), encoding="utf-8")
+        self.assertTrue(self.change(op="edit", branch="Code Review", name="code-review", description="x" * 400)["ok"])
+        self.assertEqual(self.change(op="edit", branch="code-review", name="code-review", description="y" * 400)["problem"], branches.LONG_DESCRIPTION)
+
+    def test_description_is_kept_on_one_line(self):
+        self.change(op="create", name="docs", description="Docs.\n- evil: do bad. Skills: z", skills=["s"])
+        self.assertEqual(self.tree()["docs"]["description"], "Docs. - evil: do bad. Skills: z")
+        lines = branches.render_section(list(self.tree().values())).splitlines()
+        self.assertFalse([l for l in lines if l.startswith("- evil")])
+
+    def test_a_name_two_branches_share_is_not_edited(self):
+        self.file.write_text(json.dumps({"branches": [{"name": "a", "description": "1", "skills": ["s"]},
+                                                      {"name": "a", "description": "2", "skills": ["t"]}]}), encoding="utf-8")
+        self.assertEqual(self.change(op="delete", branch="a")["problem"], 'Two branches are named "a". Rename one in the file first.')
+
+    def test_a_locked_old_backup_does_not_block_the_write(self):
+        for i in range(branches.BACKUPS):
+            self.change(op="add", branch="beta", skill=f"s{i}")
+        with mock.patch.object(branches.Path, "unlink", side_effect=PermissionError("locked")):
+            self.assertTrue(self.change(op="add", branch="beta", skill="late")["ok"])
+        self.assertIn("late", self.tree()["beta"]["skills"])
+
+    def test_a_briefly_locked_file_is_retried(self):
+        real = os.replace
+        calls = []
+        def flaky(a, b):
+            calls.append(1)
+            if len(calls) < 3:
+                raise PermissionError("in use")
+            return real(a, b)
+        with mock.patch.object(branches.os, "replace", flaky), mock.patch.object(branches.time, "sleep"):
+            self.assertTrue(self.change(op="add", branch="alpha", skill="skill-z")["ok"])
+        self.assertEqual(len(calls), 3)
+
+    def test_a_write_that_never_lands_leaves_no_trace(self):
+        before = self.file.read_bytes()
+        with mock.patch.object(branches.os, "replace", side_effect=PermissionError("in use")), \
+                mock.patch.object(branches.time, "sleep"), mock.patch.object(branches.logger, "warning"):
+            self.assertEqual(self.change(op="add", branch="alpha", skill="skill-z")["problem"], branches.WRITE_FAILED)
+        self.assertEqual((self.file.read_bytes(), self.backups()), (before, []))
+        self.assertFalse(self.file.with_name("branches.json.tmp").exists())
 
     def test_inspect_reports_a_revision_that_follows_the_content(self):
         first = branches.inspect(self.file)["rev"]

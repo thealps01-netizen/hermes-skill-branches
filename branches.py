@@ -81,9 +81,11 @@ INVALID = "The branch file is invalid. Fix it before editing it here."
 UNKNOWN = "The panel sent a change this version does not know."
 BAD_NAME = "A branch name uses lowercase letters, digits and dashes (up to 32), starting with a letter or digit."
 NO_DESCRIPTION = "Say when the branch applies; the assistant reads this to pick it."
+LONG_DESCRIPTION = "Keep the text under 300 characters."
 NO_SKILLS = "Pick at least one skill."
 BAD_SKILL = "Each skill appears once, as a one-line name."
 WRITE_FAILED = "The branch file could not be written. Nothing was changed."
+REPLACE_TRIES = 5
 _lock = threading.Lock()
 
 
@@ -98,7 +100,8 @@ def _skill(value):
 
 def _find(items, name):
     name = name.strip() if isinstance(name, str) else ""
-    return next((b for b in items if b["name"].strip() == name), None), name
+    found = [b for b in items if b["name"].strip() == name]
+    return (found[0] if found else None), name, len(found) > 1
 
 
 def _name_problem(items, name, keep=None):
@@ -109,8 +112,15 @@ def _name_problem(items, name, keep=None):
     return None
 
 
-def _description(value):
-    return value.strip() if isinstance(value, str) and value.strip() and len(value.strip()) <= 300 else None
+# Description: one line (it becomes one line of the prompt), at most 300 characters unless it is
+# the text the file already had. Returns (text, problem).
+def _description(value, old=None):
+    text = " ".join(value.split()) if isinstance(value, str) else ""
+    if not text:
+        return None, NO_DESCRIPTION
+    if len(text) > 300 and text != (" ".join(old.split()) if isinstance(old, str) else None):
+        return None, LONG_DESCRIPTION
+    return text, None
 
 
 def _apply(data, req):
@@ -119,9 +129,9 @@ def _apply(data, req):
         problem = _name_problem(items, req.get("name"))
         if problem:
             return problem
-        desc = _description(req.get("description"))
-        if not desc:
-            return NO_DESCRIPTION
+        desc, problem = _description(req.get("description"))
+        if problem:
+            return problem
         skills = req.get("skills")
         if not isinstance(skills, list) or not skills:
             return NO_SKILLS
@@ -132,19 +142,23 @@ def _apply(data, req):
         return None
     if op not in ("add", "remove", "edit", "delete"):
         return UNKNOWN
-    branch, name = _find(items, req.get("branch"))
+    branch, name, shared = _find(items, req.get("branch"))
     if branch is None:
         return f'There is no branch "{name}".'
+    if shared:
+        return f'Two branches are named "{name}". Rename one in the file first.'
     if op == "delete":
         items.remove(branch)
     elif op == "edit":
-        problem = _name_problem(items, req.get("name"), keep=branch)
+        new = req.get("name")
+        if not (isinstance(new, str) and new.strip() == branch["name"].strip()):
+            problem = _name_problem(items, new, keep=branch)
+            if problem:
+                return problem
+        desc, problem = _description(req.get("description"), branch["description"])
         if problem:
             return problem
-        desc = _description(req.get("description"))
-        if not desc:
-            return NO_DESCRIPTION
-        branch["name"], branch["description"] = req["name"].strip(), desc
+        branch["name"], branch["description"] = new.strip(), desc
     else:
         skill = _skill(req.get("skill"))
         if not skill:
@@ -172,11 +186,42 @@ def _backup(path, raw):
     folder = path.parent / "backups"
     folder.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1_000_000_000:09d}"
-    shutil.copyfile(path, folder / f"{path.stem}-{stamp}{path.suffix}")
-    if (folder / f"{path.stem}-{stamp}{path.suffix}").read_bytes() != raw:
+    copy = folder / f"{path.stem}-{stamp}{path.suffix}"
+    shutil.copyfile(path, copy)
+    if copy.read_bytes() != raw:
+        copy.unlink()
         raise OSError("backup differs")
-    for old in sorted(folder.glob(f"{path.stem}-*{path.suffix}"))[:-BACKUPS]:
-        old.unlink()
+    return copy
+
+
+# Old backups are pruned after a write lands; one that is locked (antivirus, preview pane) waits.
+def _prune(path):
+    for old in sorted((path.parent / "backups").glob(f"{path.stem}-*{path.suffix}"))[:-BACKUPS]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+
+# A reader holding the file (the gateway hook, a GET) can block the swap on Windows for a moment.
+def _replace(tmp, path):
+    for attempt in range(REPLACE_TRIES):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_TRIES - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
+def _discard(*files):
+    for f in files:
+        try:
+            if f is not None:
+                f.unlink()
+        except OSError:
+            pass
 
 
 def change(path, req):
@@ -198,16 +243,19 @@ def change(path, req):
         problem = _apply(data, req)
         if problem:
             return {"ok": False, "problem": problem}
+        tmp, copy = path.with_name(path.name + ".tmp"), None
         try:
-            if raw is not None:
-                _backup(path, raw)
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(path.name + ".tmp")
             tmp.write_bytes(_dump(data, newline))
-            os.replace(tmp, path)
+            if raw is not None:
+                copy = _backup(path, raw)
+            _replace(tmp, path)
         except OSError as exc:
             logger.warning("skill-branches: branch file not written (%s)", type(exc).__name__)
+            _discard(tmp, copy)
             return {"ok": False, "problem": WRITE_FAILED}
+        if raw is not None:
+            _prune(path)
     return {"ok": True, "problem": None}
 
 

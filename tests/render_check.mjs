@@ -310,8 +310,13 @@ const alphaRow = name => $$(el, '.skb-br')[0].querySelectorAll('li:not(.skb-addr
 let rm = $(alphaRow('skill-b'), 'button.skb-rm')
 check(!!rm && rm.title === 'Remove from branch' && text(rm) === '' && !!$(rm, 'svg[aria-hidden="true"]') && rm.getAttribute('aria-label') === 'Take skill-b off alpha', 'every skill on a branch has a Remove icon button naming the skill and the branch')
 check(!!$(alphaRow('skill-gone'), 'button.skb-rm'), 'a skill marked not installed can be removed too')
+let focusTop = null
+const onFocusIn = e => { const p = e.target.closest?.('.skb-pop'); if (p) focusTop = p.style.top }
+document.addEventListener('focusin', onFocusIn)
 await click(rm)
+document.removeEventListener('focusin', onFocusIn)
 let pop = pops(el)[0]
+check(focusTop !== null && focusTop !== '', `focus enters the popover only once it is placed under its button (top at focus: ${JSON.stringify(focusTop)})`)
 check(pops(el).length === 1 && pop.getAttribute('aria-label') === 'Take skill-b off alpha?' && rm.getAttribute('aria-expanded') === 'true', 'Remove opens one popover titled with the change')
 check(text($(pop, 'p')) === 'It stays installed and still loads by its own description.', 'the popover says the skill stays installed')
 check($$(pop, '.skb-pv li.skb-out b').map(text).join(',') === 'skill-b' && text($(pop, '.skb-pv li.skb-out em')) === 'leaves' && $$(pop, '.skb-pv li').length === 3, 'the preview draws the branch with the leaving skill marked')
@@ -334,6 +339,8 @@ await click(btnText(el, 'Remove'))
 check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'remove', branch: 'alpha', skill: 'skill-b', rev: 'r1' }), `Remove posts one change with the page's revision (${JSON.stringify(lastChange())})`)
 check(pops(el).length === 0 && restCalls.filter(c => c[0] === '/tree').length === treeReads + 1, 'after saving, the popover closes and the tree is read again')
 check(stub.calls.notify.at(-1)?.kind === 'success' && stub.calls.notify.at(-1)?.message === 'Saved. New chats use the change.', 'a notice confirms the save')
+await settle()
+check(document.activeElement !== document.body && el.contains(document.activeElement), 'after saving, focus stays in the tree')
 check(stub.calls.insert.length === 0 && stub.calls.newChat.length === 0, 'no chat is opened for an edit')
 
 // 6b. refusals and failures keep the popover open with the reason
@@ -420,6 +427,7 @@ check(!!ed && ed.getAttribute('aria-label') === 'Edit alpha' && !!$(ed, 'svg[ari
 await click(ed)
 pop = pops(el)[0]
 check($(pop, 'input[type=text]').value === 'alpha' && $(pop, 'textarea').value === 'Changes to the alpha service.' && $(pop, '.skb-go').disabled, 'Edit starts from the current name and text; nothing to save yet')
+check($(pop, 'textarea').maxLength === 300, 'the branch text is capped at 300 characters')
 await setText($(pop, 'textarea'), 'The alpha service.')
 await click($(pop, '.skb-go'))
 check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'edit', branch: 'alpha', name: 'alpha', description: 'The alpha service.', rev: 'r1' }), 'Save posts the edit')
