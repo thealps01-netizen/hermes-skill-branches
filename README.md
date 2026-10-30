@@ -12,19 +12,25 @@ on every turn, to name the area of the request first did.
 - **Every turn:** adds one sentence asking the model to name the branch the message belongs to (or
   `none`) before its first tool call, then load with `skill_view` the skills of that branch that apply.
 - It never loads a skill itself; the model picks within the branch.
-- **Desktop page:** a "Skill branches" row in the app's sidebar opens a read-only view: the branches
+- **Desktop page:** a "Skill branches" row in the app's sidebar opens a view of the branches
   and their skills, every other installed skill as a seed grouped by folder (a plugin's skills in a
   folder named after the plugin), a tile map of all of them, and search over names and descriptions. It warns when the branch file is invalid (routing
   is off), missing, or has fields routing ignores (such as nested branches), marks branch skills
-  that are not installed, and lists skills that arrived since the branch file last changed.
-- **Adding skills by hand:** each branch ends with "Add a skill to <branch>"; each seed row has a
-  + button ("Add to a branch") and each skill on a branch a − button ("Remove from branch"),
-  shown on hover or keyboard focus (always on touch screens) in their own column at the row's
-  end. They open a new chat with the request in its message box; you read it and send it, the
-  assistant shows the change before and after, and writes it only after you approve. Removing takes the skill off the
-  branch only; it stays installed. The page itself never writes or deletes a file.
+  that are not installed.
+- **Editing by hand:** each branch ends with "Add a skill to <branch>"; each seed row has a + button
+  ("Add to a branch"), each skill on a branch a − button ("Remove from branch") and each branch head
+  a pencil ("Edit or delete this branch"); the tree ends with "New branch". The row buttons show on
+  hover or keyboard focus (always on touch screens) in their own column at the row's end. Each opens
+  a small window under the button that draws the branch as it will be after the change; nothing is
+  written until you press its main button. Then the page writes the branch file directly: it
+  refuses if the file changed since the page read it, keeps a copy of the old file first (the last
+  10, in `backups/` next to it), and reads the file again. Removing takes the name off the branch
+  only; the skill stays installed. One skill can sit on several branches: a branch's Add list offers
+  skills already on other branches and says where they are. Deleting a branch asks twice; its
+  skills become seeds unless another branch has them. Changes reach new chats.
 - **Guided setup:** ships one skill, `skill-branches:setup`. When the branch file is missing the
-  page offers "Set up with the assistant", which opens a new chat with a request to load it. The
+  page offers "Set up with the assistant", which opens a new chat with a request to load it (or
+  start with "New branch" yourself). The
   assistant lists your installed skills, asks what work you do, shows a draft file with a reason per
   branch, and writes it only after you approve; then it checks the file and gives you a test message.
   In any chat you can also ask the assistant to set up or change your skill branches.

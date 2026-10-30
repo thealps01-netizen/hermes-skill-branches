@@ -3,7 +3,7 @@ import logging
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -55,3 +55,16 @@ def _plugin_skills():
 @router.get("/tree")
 async def tree():
     return tree_payload()
+
+
+def change_payload(req, path=None):
+    try:
+        return _branches().change(path or _tree_path(), req)
+    except Exception as exc:
+        logger.warning("skill-branches: panel change failed (%s)", type(exc).__name__)
+        return {"ok": False, "problem": "The change could not be saved. Nothing was changed."}
+
+
+@router.post("/change")
+def change(req: dict = Body(...)):
+    return change_payload(req)

@@ -67,13 +67,30 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(warn.call_count, 1)
         self.assertNotIn("secret detail", str(warn.call_args))
 
-    def test_read_only(self):
+    def test_tree_is_read_only(self):
         self.file.write_text(json.dumps(TREE), encoding="utf-8")
         before = self.file.read_bytes(), self.file.stat().st_mtime_ns
         self.get()
         self.assertEqual((self.file.read_bytes(), self.file.stat().st_mtime_ns), before)
         self.assertEqual(self.client.post(f"{PREFIX}/tree").status_code, 405)
 
+    def test_change_writes_through_the_shared_rules(self):
+        self.file.write_text(json.dumps(TREE), encoding="utf-8")
+        rev = self.get()["rev"]
+        got = self.client.post(f"{PREFIX}/change", json={"op": "add", "branch": "alpha", "skill": "skill-z", "rev": rev})
+        self.assertEqual((got.status_code, got.json()), (200, {"ok": True, "problem": None}))
+        self.assertEqual(self.get()["branches"][0]["skills"], ["skill-a", "skill-z"])
+        again = self.client.post(f"{PREFIX}/change", json={"op": "add", "branch": "alpha", "skill": "skill-y", "rev": rev})
+        self.assertFalse(again.json()["ok"])
+        self.assertIn("changed since this page loaded", again.json()["problem"])
+
+    def test_change_failure_is_a_refusal_with_one_warning(self):
+        with mock.patch.object(api, "_branches", side_effect=RuntimeError("secret detail")), \
+                mock.patch.object(api.logger, "warning") as warn:
+            got = self.client.post(f"{PREFIX}/change", json={"op": "delete", "branch": "alpha", "rev": None})
+        self.assertEqual(got.json(), {"ok": False, "problem": "The change could not be saved. Nothing was changed."})
+        self.assertEqual(warn.call_count, 1)
+        self.assertNotIn("secret detail", str(warn.call_args))
 
     def test_plugin_skills_listed_by_namespace_without_disabled_ones(self):
         rows = [{"name": "toolkit:helper", "description": "Helps."}, {"name": "toolkit:off", "description": "Off."},

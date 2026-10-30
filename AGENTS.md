@@ -1,11 +1,12 @@
 # AGENTS.md — skill-branches
 
-Native Hermes plugin with a read-only desktop page. `__init__.py` registers one cache-safe system-prompt section
+Native Hermes plugin with a desktop page that edits the branch file. `__init__.py` registers one cache-safe system-prompt section
 (`skill-branches.tree`, the branch list, rendered once per new session) and one `pre_llm_call` hook (a
 one-sentence directive on every turn). `branches.py` loads and validates the branch file and renders
 both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
-serves `GET /tree` (that inspection, plus the enabled plugin skills from Hermes' plugin manager) to
-`desktop/plugin.js`, the page; the other skills come from the host SDK.
+serves `GET /tree` (that inspection, plus the enabled plugin skills from Hermes' plugin manager) and
+`POST /change` (one edit, through `branches.change()`) to `desktop/plugin.js`, the page; the other
+skills come from the host SDK.
 `skills/setup/SKILL.md` is the bundled guided-setup skill (`skill-branches:setup`), registered in
 `__init__.py`; the page's missing-file banner asks the assistant to load it.
 `README.md` explains behaviour, the file format and limits.
@@ -39,12 +40,16 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
 - Develop only in this checkout. Never edit the installed copy under `<hermes home>/plugins/`.
 - Agent-read text (code, comments, docs) is English; the page's copy is English too (the app has no
   other locale) and lives in the `en` bundle.
-- The page is read-only: it calls `GET /tree` only, writes no file, toggles nothing; its one storage
-  key, `seen`, records the skills present when the branch file last changed. Its Add and Remove buttons only
-  open a new chat with the request in its box (`host.newChat`, then
+- The page calls `GET /tree` and `POST /change` only and toggles nothing; it stores nothing (it
+  removes the old `seen` key). Every edit opens a popover that previews the branch after the change;
+  only its main button posts the change, with the `rev` the page was drawn from.
+- `branches.change()` is the only writer: one change per call, refused when `rev` differs from the
+  file on disk, validated with the same rules as `inspect()`, a byte-equal backup in `backups/`
+  (last 10) before an atomic replace, the file's own line endings and one line per branch kept, and
+  every field it does not edit preserved. No backup, no write.
+- Only "Set up with the assistant" (missing file) goes through a chat: `host.newChat`, then
   `composer.insertText('new', …)` with a bounded wait; older apps: the open chat box; then the
-  clipboard) and show a notice saying where it went; the assistant edits the file after the
-  user approves, following `skills/setup/SKILL.md`.
+  clipboard.
 - Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
   no text under 12px; one animation, off under `prefers-reduced-motion`. `render_check.mjs` locks these.
 - The setup skill carries only general, measured lessons; never the author's branches or skill names.

@@ -244,5 +244,146 @@ class SetupSkillTests(unittest.TestCase):
         self.assertIn("approve", text.lower())
 
 
+class ChangeTests(unittest.TestCase):
+    """The panel's edits: one change per call, checked against the file it was read from, backed up first."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.file = Path(self.tmp.name) / "branches.json"
+        self.file.write_bytes(
+            b'{\r\n  "group": "Code",\r\n  "branches": [\r\n'
+            b'    {"name": "alpha", "description": "First area.", "skills": ["skill-a", "skill-b"], "note": "kept"},\r\n'
+            b'    {"name": "beta", "description": "Ikinci alan \xc3\xa7\xc3\xb6z\xc3\xbcm.", "skills": ["skill-c"]}\r\n'
+            b'  ],\r\n  "owner": "me"\r\n}')
+
+    def change(self, **req):
+        req.setdefault("rev", branches.inspect(self.file)["rev"])
+        return branches.change(self.file, req)
+
+    def tree(self):
+        return {b["name"]: b for b in branches.inspect(self.file)["branches"]}
+
+    def backups(self):
+        folder = self.file.parent / "backups"
+        return sorted(folder.iterdir()) if folder.is_dir() else []
+
+    def test_add_appends_the_skill_and_keeps_everything_else(self):
+        before = self.file.read_bytes()
+        self.assertEqual(self.change(op="add", branch="alpha", skill="skill-z"), {"ok": True, "problem": None})
+        self.assertEqual(self.tree()["alpha"]["skills"], ["skill-a", "skill-b", "skill-z"])
+        raw = json.loads(self.file.read_text(encoding="utf-8"))
+        self.assertEqual((raw["owner"], raw["branches"][0]["note"], raw["group"]), ("me", "kept", "Code"))
+        self.assertEqual(self.tree()["beta"]["description"], "Ikinci alan çözüm.")
+        self.assertEqual([b.read_bytes() for b in self.backups()], [before])
+
+    def test_written_file_keeps_its_line_endings_and_one_line_per_branch(self):
+        self.change(op="add", branch="beta", skill="skill-a")
+        text = self.file.read_bytes().decode("utf-8")
+        self.assertNotIn("\n", text.replace("\r\n", ""))
+        self.assertIn('    {"name": "beta", "description": "Ikinci alan çözüm.", "skills": ["skill-c", "skill-a"]}', text)
+
+    def test_one_skill_can_sit_on_several_branches(self):
+        self.assertTrue(self.change(op="add", branch="beta", skill="skill-a")["ok"])
+        self.assertEqual((self.tree()["alpha"]["skills"][0], self.tree()["beta"]["skills"]), ("skill-a", ["skill-c", "skill-a"]))
+
+    def test_add_refuses_a_skill_already_on_that_branch(self):
+        got = self.change(op="add", branch="alpha", skill="skill-a")
+        self.assertEqual(got, {"ok": False, "problem": "skill-a is already on alpha."})
+
+    def test_remove_takes_only_that_name_off_that_branch(self):
+        self.change(op="add", branch="beta", skill="skill-a")
+        self.assertTrue(self.change(op="remove", branch="alpha", skill="skill-a")["ok"])
+        self.assertEqual((self.tree()["alpha"]["skills"], self.tree()["beta"]["skills"]), (["skill-b"], ["skill-c", "skill-a"]))
+
+    def test_remove_the_last_skill_keeps_an_empty_branch(self):
+        self.assertTrue(self.change(op="remove", branch="beta", skill="skill-c")["ok"])
+        self.assertEqual(self.tree()["beta"]["skills"], [])
+        self.assertEqual(branches.inspect(self.file)["state"], "ok")
+
+    def test_remove_names_a_skill_that_is_not_there(self):
+        self.assertEqual(self.change(op="remove", branch="beta", skill="skill-a"), {"ok": False, "problem": "skill-a is not on beta."})
+
+    def test_unknown_branch(self):
+        self.assertEqual(self.change(op="add", branch="gamma", skill="x"), {"ok": False, "problem": 'There is no branch "gamma".'})
+
+    def test_stale_page_is_refused_and_nothing_is_written(self):
+        before = self.file.read_bytes()
+        got = branches.change(self.file, {"op": "add", "branch": "alpha", "skill": "skill-z", "rev": "0" * 16})
+        self.assertEqual(got, {"ok": False, "problem": branches.STALE})
+        self.assertEqual((self.file.read_bytes(), self.backups()), (before, []))
+
+    def test_create_adds_a_branch_at_the_end(self):
+        got = self.change(op="create", name="docs", description="  Writing project docs. ", skills=["skill-a", "skill-x"])
+        self.assertTrue(got["ok"])
+        self.assertEqual(list(self.tree()), ["alpha", "beta", "docs"])
+        self.assertEqual(self.tree()["docs"], {"name": "docs", "description": "Writing project docs.", "skills": ["skill-a", "skill-x"]})
+
+    def test_create_checks_name_description_and_skills(self):
+        bad = {
+            "Docs": branches.BAD_NAME, "-x": branches.BAD_NAME, "a b": branches.BAD_NAME, "x" * 33: branches.BAD_NAME,
+            "alpha": 'A branch named "alpha" already exists.',
+        }
+        for name, problem in bad.items():
+            self.assertEqual(self.change(op="create", name=name, description="d", skills=["s"]), {"ok": False, "problem": problem}, name)
+        self.assertEqual(self.change(op="create", name="docs", description=" ", skills=["s"])["problem"], branches.NO_DESCRIPTION)
+        self.assertEqual(self.change(op="create", name="docs", description="d", skills=[])["problem"], branches.NO_SKILLS)
+        self.assertEqual(self.change(op="create", name="docs", description="d", skills=["a\nb"])["problem"], branches.BAD_SKILL)
+        self.assertEqual(self.change(op="create", name="docs", description="d", skills=["s", "s"])["problem"], branches.BAD_SKILL)
+        self.assertEqual(self.backups(), [])
+
+    def test_create_on_a_missing_file_writes_a_new_one(self):
+        self.file.unlink()
+        got = branches.change(self.file, {"op": "create", "rev": None, "name": "docs", "description": "Docs.", "skills": ["s"]})
+        self.assertTrue(got["ok"])
+        self.assertEqual(json.loads(self.file.read_text(encoding="utf-8")), {"branches": [{"name": "docs", "description": "Docs.", "skills": ["s"]}]})
+
+    def test_edit_renames_and_redescribes(self):
+        self.assertTrue(self.change(op="edit", branch="alpha", name="first", description="The first area.")["ok"])
+        self.assertEqual(list(self.tree()), ["first", "beta"])
+        self.assertEqual(self.tree()["first"]["description"], "The first area.")
+        raw = json.loads(self.file.read_text(encoding="utf-8"))
+        self.assertEqual(raw["branches"][0]["note"], "kept")
+
+    def test_edit_refuses_a_name_another_branch_has(self):
+        self.assertEqual(self.change(op="edit", branch="alpha", name="beta", description="d")["problem"], 'A branch named "beta" already exists.')
+        self.assertTrue(self.change(op="edit", branch="alpha", name="alpha", description="Same name, new text.")["ok"])
+
+    def test_delete_removes_the_branch_only(self):
+        self.assertTrue(self.change(op="delete", branch="alpha")["ok"])
+        self.assertEqual(list(self.tree()), ["beta"])
+
+    def test_invalid_file_is_never_edited(self):
+        self.file.write_text('{"branches": "x"}', encoding="utf-8")
+        self.assertEqual(self.change(op="delete", branch="alpha"), {"ok": False, "problem": branches.INVALID})
+
+    def test_unknown_op(self):
+        self.assertEqual(self.change(op="explode")["problem"], branches.UNKNOWN)
+        self.assertEqual(branches.change(self.file, "not a dict")["problem"], branches.UNKNOWN)
+
+    def test_keeps_the_last_ten_backups(self):
+        for i in range(12):
+            self.assertTrue(self.change(op="add", branch="beta", skill=f"s{i}")["ok"])
+        self.assertEqual(len(self.backups()), branches.BACKUPS)
+        self.assertIn(b'"s10"', self.backups()[-1].read_bytes())
+
+    def test_no_backup_no_write(self):
+        before = self.file.read_bytes()
+        with mock.patch.object(branches.shutil, "copyfile", side_effect=OSError("disk full")), \
+                mock.patch.object(branches.logger, "warning") as warn:
+            got = self.change(op="add", branch="alpha", skill="skill-z")
+        self.assertEqual(got, {"ok": False, "problem": branches.WRITE_FAILED})
+        self.assertEqual(self.file.read_bytes(), before)
+        self.assertEqual(warn.call_count, 1)
+        self.assertNotIn("disk full", str(warn.call_args))
+
+    def test_inspect_reports_a_revision_that_follows_the_content(self):
+        first = branches.inspect(self.file)["rev"]
+        self.assertRegex(first, r"^[0-9a-f]{16}$")
+        self.change(op="add", branch="alpha", skill="skill-z")
+        self.assertNotEqual(branches.inspect(self.file)["rev"], first)
+        self.assertIsNone(branches.inspect(Path(self.tmp.name) / "none.json")["rev"])
+
+
 if __name__ == "__main__":
     unittest.main()

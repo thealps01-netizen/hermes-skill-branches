@@ -17,11 +17,12 @@
  *   4. Controls: a branch toggles open and closed; arrow keys move between toggles.
  *   5. Branch file states: invalid -> an alert with the reason and the file path, no branch rows;
  *      missing -> a note with the path; ignored fields -> a warning listing them.
- *   6. New: the first visit records the installed skills; a skill that arrives later is listed
- *      under "New since the branch file last changed" until the branch file changes. Ask the
- *      assistant writes into the chat box, or copies when no chat box answers.
- *   7. Read-only: the only REST call is GET /tree; the only storage key written is "seen"; no
- *      skill or toolset is toggled.
+ *   6. Edits: Remove, Add (from a seed or a branch's Add row), New branch, Edit and Delete each open
+ *      one popover that previews the change; only its primary button posts one change to
+ *      POST /change with the page's revision, then the tree is read again. Refusals stay in the
+ *      popover. Cancel, Escape and a click outside write nothing. No chat is opened for an edit.
+ *   7. What the page touches: GET /tree and POST /change only; the old "seen" key is removed and
+ *      nothing else is stored; no skill or toolset is toggled.
  *   8. Errors: a failed /tree or skill list is one alert naming the error.
  *   9. Copy and theme: no raw i18n key on screen or in labels; every var(--x) in the plugin is
  *      defined by the app's stylesheet (negative control included); no literal colour; no font
@@ -62,7 +63,7 @@ export const jsx = m.jsx, jsxs = m.jsxs, Fragment = m.Fragment
 `)
 writeFileSync(path.join(OUT, 'react-hooks.mjs'), `import { createRequire } from 'node:module'
 const R = createRequire(${anchor})('react')
-export const useEffect = R.useEffect, useId = R.useId, useRef = R.useRef, useState = R.useState
+export const useEffect = R.useEffect, useId = R.useId, useLayoutEffect = R.useLayoutEffect, useRef = R.useRef, useState = R.useState
 `)
 writeFileSync(path.join(OUT, 'sdk-stub.mjs'), `import { createRequire } from 'node:module'
 const React = createRequire(${anchor})('react')
@@ -78,12 +79,10 @@ export function usePluginI18n() {
 }
 export function useQuery({ queryFn }) {
   const [s, set] = React.useState({ isLoading: true })
-  React.useEffect(() => {
-    let live = true
-    Promise.resolve().then(queryFn).then(data => live && set({ data }), error => live && set({ error }))
-    return () => { live = false }
-  }, [])
-  return s
+  const live = React.useRef(true)
+  const run = () => Promise.resolve().then(queryFn).then(data => live.current && set({ data }), error => live.current && set({ error }))
+  React.useEffect(() => { live.current = true; run(); return () => { live.current = false } }, [])
+  return { ...s, refetch: run }
 }
 export const calls = { insert: [], setEnabled: [], newChat: [], notify: [] }
 export const state = { skills: [], skillsFail: null, insertResult: true, insertFailTimes: 0, oldDesktop: false, lostDrafts: 0 }
@@ -125,12 +124,19 @@ const storageWrites = []
 const clipboard = []
 let clipboardWorks = true
 let treeAnswer = null
+let changeAnswer = { ok: true, problem: null }
+const changeCalls = []
 const ctx = {
   register: c => { registered.push(c); return () => {} },
   registerMany: cs => { registered.push(...cs); return () => {} },
   i18n: { register: b => { ctx.bundle = b; stub.i18n.bundle = b }, t: key => key.split('.').reduce((n, p) => n?.[p], ctx.bundle?.en) ?? key },
   rest: async (p, opts) => {
     restCalls.push([p, opts])
+    if (p === '/change') {
+      changeCalls.push(opts?.body)
+      if (changeAnswer instanceof Error) throw changeAnswer
+      return changeAnswer
+    }
     if (treeAnswer instanceof Error) throw treeAnswer
     return treeAnswer
   },
@@ -146,7 +152,7 @@ const ctx = {
 // ── fixtures (neutral names) ────────────────────────────────────────────────
 const LONG_NAME = 'a-very-long-unbreakable-skill-name-that-should-wrap-inside-its-cell'
 const tree = (over = {}) => ({
-  state: 'ok', problem: null, group: 'Code', ignored: [], modified: 100, path: 'C:/home/plugin-data/skill-branches/branches.json',
+  state: 'ok', problem: null, group: 'Code', ignored: [], modified: 100, rev: 'r1', path: 'C:/home/plugin-data/skill-branches/branches.json',
   branches: [
     { name: 'alpha', description: 'Changes to the alpha service.', skills: ['skill-a', 'skill-b', 'skill-gone'] },
     { name: 'beta', description: 'Release notes and changelogs.', skills: ['skill-c'] }
@@ -217,7 +223,6 @@ const more = $(el, '.skb-more')
 check(text(more) === 'Show 4 more folders', `show-more button (${text(more)})`)
 await click(more)
 check($$(el, '.skb-fold').length === 12 && text($(el, '.skb-more')) === 'Show fewer folders', 'show-more reveals every folder')
-check($$(el, '.skb-sprout').length === 0 && storage.has('seen'), 'first visit: no New list, installed skills recorded')
 check($$(el, '.skb-brp').length === 2 && $$(el, '.skb-seedp').length >= 1, 'map has a plot per branch and seed plots')
 check($$(el, '.skb-tiles i.skb-miss').length === 1, 'missing skill drawn as a hollow tile')
 
@@ -278,8 +283,6 @@ await unmountAll()
 // 5b. plugin skills (listed by the plugin's /tree, not by the app's skill list)
 const plug = (name, description = `Does ${name} things.`) => ({ name, description, category: name.split(':')[0] })
 const withPlugins = (over = {}) => tree({ plugin_skills: [plug('toolkit:helper'), plug('toolkit:spare'), plug('skill-c')], ...over })
-storage.clear()
-storage.set('seen', JSON.stringify({ modified: 100, names: baseSkills().map(s => s.name) }))
 el = await mountPage(withPlugins({ branches: [{ name: 'alpha', description: 'Changes to the alpha service.', skills: ['skill-a', 'toolkit:helper'] }] }), baseSkills())
 const helper = $$(el, '.skb-br li').find(li => text($(li, 'b')) === 'toolkit:helper')
 check(helper && !helper.classList.contains('skb-miss'), 'a plugin skill on a branch counts as installed')
@@ -287,113 +290,168 @@ await click($(el, '.skb-more'))
 const toolkit = $$(el, '.skb-fold').find(f => text($(f, '.skb-n')) === 'toolkit')
 check(!!toolkit && text(toolkit).includes('toolkit:spare'), 'plugin skills off a branch are seeds in a folder named after the plugin')
 check(text($(el, '.skb-fh')).includes('19 skills'), `a name both lists carry is counted once (${text($(el, '.skb-fh'))})`)
-check($$(el, '.skb-sprout').length === 0, 'upgrade: plugin skills that were already there are not listed as New')
-check(JSON.parse(storage.get('seen')).v === 2 && JSON.parse(storage.get('seen')).names.includes('toolkit:spare'), 'upgrade: the record now includes plugin skills')
-await unmountAll()
-el = await mountPage(withPlugins({ plugin_skills: [plug('toolkit:helper'), plug('toolkit:spare'), plug('toolkit:later')] }), baseSkills())
-check($$(el, '.skb-sprout b').map(text).join(',') === 'toolkit:later', 'a plugin skill that arrives later is listed as New')
 await unmountAll()
 
-// 6. New
+// 6. Edits: each button opens a popover that previews the change; only its primary button writes,
+// through POST /change with the revision the page was drawn from; the tree is then read again.
+const pops = el => $$(el, '.skb-pop[role=dialog]')
+const btnText = (el, label) => $$(el, '.skb-pop button').find(b => text(b) === label)
+const lastChange = () => changeCalls.at(-1)
+changeAnswer = { ok: true, problem: null }
+stub.calls.insert.length = 0; stub.calls.newChat.length = 0
 storage.clear()
+storage.set('seen', JSON.stringify({ v: 2, modified: 100, names: [] }))
 el = await mountPage(tree(), baseSkills())
-await unmountAll()
-el = await mountPage(tree(), [...baseSkills(), skill('fresh-one', 'dev', 'Arrived later.')])
-const sprout = $(el, '.skb-sprout')
-check(text($(el, '.skb-newh')) === 'New since the branch file last changed' && text($(sprout, 'b')) === 'fresh-one', 'a later skill is listed as New')
-check($$(el, '.skb-fold li.skb-nw b').map(text).join(',') === 'fresh-one', 'the New skill is also marked in its folder')
-stub.state.insertResult = true
-stub.calls.insert.length = 0
-await send($(sprout, '.skb-ask'))
-check(stub.calls.insert.length === 1 && stub.calls.insert[0][0] === 'new' && stub.calls.insert[0][1] === 'Load skill-branches:setup and help me put the fresh-one skill on one of my skill branches; suggest which one and why.' && stub.calls.insert[0][2]?.mode === 'block', 'Ask writes the message into the chat box')
-check(text($(sprout, '.skb-ask')) === 'Opened in a new chat', 'Ask reports the chat box')
-await unmountAll()
-el = await mountPage(tree(), [...baseSkills(), skill('fresh-one', 'dev', 'Arrived later.')])
-check($$(el, '.skb-sprout').length === 1, 'New stays listed on the next visit while the branch file is unchanged')
-stub.state.insertResult = false
-await act(async () => { $(el, '.skb-sprout .skb-ask').click(); await new Promise(r => setTimeout(r, 2000)) })
-check(clipboard.at(-1) === 'Load skill-branches:setup and help me put the fresh-one skill on one of my skill branches; suggest which one and why.' && text($(el, '.skb-ask')) === 'Copied — paste it into a chat', 'no chat box: Ask copies instead')
-await unmountAll()
-el = await mountPage(tree({ modified: 200 }), [...baseSkills(), skill('fresh-one', 'dev', 'Arrived later.')])
-check($$(el, '.skb-sprout').length === 0 && JSON.parse(storage.get('seen')).modified === 200, 'branch file changed: New list resets')
-await unmountAll()
+check(!storage.has('seen'), 'the old New-list record is cleared')
+check($$(el, '.skb-sprout').length === 0 && $$(el, '.skb-ask').length === 0, 'no New list and no Ask buttons')
 
-// 6b. Add: hands a request to the chat, never writes the file
-stub.state.insertResult = true
-el = await mountPage(tree(), baseSkills())
-const addRows = $$(el, '.skb-br .skb-addrow button')
-check(addRows.map(text).join('|') === 'Add a skill to alpha|Add a skill to beta', `each branch ends with an always-shown Add row (${addRows.map(text)})`)
-check(addRows.every(b => $(b, 'svg[aria-hidden="true"]')), 'the Add row carries a drawn plus icon')
-await send(addRows[0])
-check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me add a skill to my alpha skill branch; ask me which one.', 'branch Add writes its request into the chat box')
-check(text(addRows[0]) === 'Opened in a new chat', 'branch Add reports the chat box')
+// 6a. remove
+const alphaRow = name => $$(el, '.skb-br')[0].querySelectorAll('li:not(.skb-addrow)') && [...$$(el, '.skb-br')[0].querySelectorAll('li:not(.skb-addrow)')].find(li => text($(li, 'b')) === name)
+let rm = $(alphaRow('skill-b'), 'button.skb-rm')
+check(!!rm && rm.title === 'Remove from branch' && text(rm) === '' && !!$(rm, 'svg[aria-hidden="true"]') && rm.getAttribute('aria-label') === 'Take skill-b off alpha', 'every skill on a branch has a Remove icon button naming the skill and the branch')
+check(!!$(alphaRow('skill-gone'), 'button.skb-rm'), 'a skill marked not installed can be removed too')
+await click(rm)
+let pop = pops(el)[0]
+check(pops(el).length === 1 && pop.getAttribute('aria-label') === 'Take skill-b off alpha?' && rm.getAttribute('aria-expanded') === 'true', 'Remove opens one popover titled with the change')
+check(text($(pop, 'p')) === 'It stays installed and still loads by its own description.', 'the popover says the skill stays installed')
+check($$(pop, '.skb-pv li.skb-out b').map(text).join(',') === 'skill-b' && text($(pop, '.skb-pv li.skb-out em')) === 'leaves' && $$(pop, '.skb-pv li').length === 3, 'the preview draws the branch with the leaving skill marked')
+check(text($(pop, '.skb-pf small')) === 'A backup is kept', 'the popover says a backup is kept')
+check(changeCalls.length === 0, 'opening a popover writes nothing')
+await click(btnText(el, 'Cancel'))
+check(pops(el).length === 0 && changeCalls.length === 0, 'Cancel closes without writing')
+await click(rm)
+await key(pops(el)[0], 'Escape')
+check(pops(el).length === 0 && changeCalls.length === 0, 'Escape closes without writing')
+await settle()
+check(document.activeElement === rm, 'focus returns to the button that opened it')
+await click(rm)
+await act(async () => { document.body.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true })); await settle() })
+check(pops(el).length === 0, 'a click outside closes it')
+await click(rm)
+const treeReads = restCalls.filter(c => c[0] === '/tree').length
+stub.calls.notify.length = 0
+await click(btnText(el, 'Remove'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'remove', branch: 'alpha', skill: 'skill-b', rev: 'r1' }), `Remove posts one change with the page's revision (${JSON.stringify(lastChange())})`)
+check(pops(el).length === 0 && restCalls.filter(c => c[0] === '/tree').length === treeReads + 1, 'after saving, the popover closes and the tree is read again')
+check(stub.calls.notify.at(-1)?.kind === 'success' && stub.calls.notify.at(-1)?.message === 'Saved. New chats use the change.', 'a notice confirms the save')
+check(stub.calls.insert.length === 0 && stub.calls.newChat.length === 0, 'no chat is opened for an edit')
+
+// 6b. refusals and failures keep the popover open with the reason
+changeAnswer = { ok: false, problem: 'The branch file changed since this page loaded.' }
+rm = $(alphaRow('skill-a'), 'button.skb-rm')
+await click(rm)
+await click(btnText(el, 'Remove'))
+check(pops(el).length === 1 && text($(pops(el)[0], '[role=alert]')) === 'The branch file changed since this page loaded.', 'a refusal is shown in the popover, which stays open')
+changeAnswer = new Error('HTTP 404')
+await click(btnText(el, 'Remove'))
+check(text($(pops(el)[0], '[role=alert]')) === 'Could not save: HTTP 404. If you just installed this version, restart Hermes.', 'a failed request is named')
+changeAnswer = { ok: true, problem: null }
+await click(btnText(el, 'Cancel'))
+
+// 6c. a seed goes onto a branch the user picks
 await click($(el, '.skb-more'))
 const seedFold = $$(el, '.skb-fold').find(f => text($(f, '.skb-n')) === 'folder-03')
 await click($(seedFold, '.skb-tog'))
-const seedRow = $$(seedFold, 'li').find(li => text($(li, 'b')) === 'seed-3')
-const seedAdd = seedRow && $(seedRow, 'button.skb-add')
-check(!!seedAdd && seedAdd.title === 'Add to a branch' && text(seedAdd) === '' && !!$(seedAdd, 'svg[aria-hidden="true"]') && seedAdd.getAttribute('aria-label') === 'Ask the assistant which branch seed-3 belongs on', 'every seed row has an Add to a branch icon button, named after its skill, its label in the tooltip')
-await send(seedAdd)
-check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me put the seed-3 skill on one of my skill branches; suggest which one and why.', 'seed Add writes its request into the chat box')
-check(seedAdd.title === 'Opened in a new chat' && seedAdd.hasAttribute('data-sent'), 'seed Add reports the chat box and stays shown')
-check($$(el, '.skb-br li:not(.skb-addrow) button.skb-add:not(.skb-rm)').length === 0, 'skills already on a branch have no Add button')
-const alphaRows = $$(el, '.skb-br')[0].querySelectorAll('li:not(.skb-addrow)')
-const rmB = [...alphaRows].find(li => text($(li, 'b')) === 'skill-b')
-const rm = rmB && $(rmB, 'button.skb-rm')
-check(!!rm && rm.title === 'Remove from branch' && text(rm) === '' && !!$(rm, 'svg[aria-hidden="true"]') && rm.getAttribute('aria-label') === 'Ask the assistant to take skill-b off alpha', 'every skill on a branch has a Remove icon button naming the skill and the branch')
-const rmGone = [...alphaRows].find(li => text($(li, 'b')) === 'skill-gone')
-check(!!(rmGone && $(rmGone, 'button.skb-rm')), 'a skill marked not installed can be removed too')
-await send(rm)
-check(stub.calls.insert.at(-1)?.[1] === 'Load skill-branches:setup and help me take the skill-b skill off my alpha skill branch. Keep the skill installed.', 'Remove writes its request into the chat box; nothing is deleted')
-check(rm.title === 'Opened in a new chat' && rm.hasAttribute('data-sent'), 'Remove reports the chat box and stays shown')
-check($(rm, 'path')?.getAttribute('d') === 'M2.5 6.3 5 8.6l4.5-5.2', 'a sent request turns the icon into a check')
+const seedAdd = $($$(seedFold, 'li').find(li => text($(li, 'b')) === 'seed-3'), 'button.skb-add')
+check(!!seedAdd && seedAdd.title === 'Add to a branch' && seedAdd.getAttribute('aria-label') === 'Put seed-3 on a branch' && !!$(seedAdd, 'svg[aria-hidden="true"]'), 'every seed row has an Add icon button named after its skill')
+await click(seedAdd)
+pop = pops(el)[0]
+check(pop?.getAttribute('aria-label') === 'Put seed-3 on a branch' && $$(pop, '.skb-pick input[type=radio]').length === 2, 'the popover offers every branch as a choice')
+const goPlace = $(pop, '.skb-go')
+check(goPlace.disabled && !$(pop, '.skb-pv'), 'nothing to save until a branch is picked')
+await click($$(pop, '.skb-tile input')[1])
+check(!$(pop, '.skb-go').disabled && text($(pop, '.skb-go')) === 'Add to beta' && $$(pop, '.skb-pv li.skb-in b').map(text).join(',') === 'seed-3', 'picking beta previews seed-3 joining it')
+await click($(pop, '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'add', branch: 'beta', skill: 'seed-3', rev: 'r1' }), 'Add to beta posts the change')
+
+// 6d. the branch's own Add row picks from every skill not on it, including skills on other branches
+const addRows = $$(el, '.skb-br .skb-addrow button')
+check(addRows.map(text).join('|') === 'Add a skill to alpha|Add a skill to beta' && addRows.every(b => $(b, 'svg[aria-hidden="true"]')), 'each branch ends with an Add row with a drawn plus')
+await click(addRows[1])
+pop = pops(el)[0]
+await settle()
+check(document.activeElement === $(pop, 'input[type=search]'), 'the skill search is focused')
+const optNames = () => $$(pops(el)[0], '.skb-opt b').map(text)
+check(!optNames().includes('skill-c') && optNames().includes('skill-a') && optNames().includes('seed-0'), 'skills already on beta are not offered; skills on other branches are')
+const optA = $$(pop, '.skb-opt').find(o => text($(o, 'b')) === 'skill-a')
+check(text($(optA, 'small')) === 'on alpha', 'a skill on another branch says where it already is')
+check(optNames().indexOf('seed-0') < optNames().indexOf('skill-a'), 'seeds come first')
+await typeInto($(pop, 'input[type=search]'), 'seed-x')
+check(optNames().join(',') === 'seed-x', 'the search narrows the list')
+await typeInto($(pop, 'input[type=search]'), 'nothing-here')
+check(text($(pops(el)[0], '.skb-opts p')) === 'No skill off this branch matches "nothing-here".', 'no match is said')
+await typeInto($(pop, 'input[type=search]'), 'skill-a')
+await click($(pops(el)[0], '.skb-opt input'))
+check($$(pops(el)[0], '.skb-pv li.skb-in b').map(text).join(',') === 'skill-a', 'the picked skill is previewed joining beta')
+await click($(pops(el)[0], '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'add', branch: 'beta', skill: 'skill-a', rev: 'r1' }), 'one skill can be added to a second branch')
+
+// 6e. new branch
+const nb = $(el, '.skb-nbb')
+check(text(nb) === 'New branch' && !!$(nb, 'svg[aria-hidden="true"]'), 'the tree ends with New branch')
+await click(nb)
+pop = pops(el)[0]
+const [nameIn] = $$(pop, 'input[type=text]')
+await typeInto(nameIn, 'Bad Name')
+check(nameIn.getAttribute('aria-invalid') === 'true' && text($(pop, '.skb-fl small')) === 'Use lowercase letters, digits and dashes, starting with a letter or digit (up to 32).', 'a bad name is flagged as typed')
+await typeInto(nameIn, 'alpha')
+check(text($(pop, '.skb-fl small')) === 'There is already a branch named alpha.', 'a taken name is flagged')
+await typeInto(nameIn, 'docs')
+const setText = async (area, value) => {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set
+  await act(async () => { setter.call(area, value); area.dispatchEvent(new dom.window.Event('input', { bubbles: true })); await settle() })
+}
+await setText($(pop, 'textarea'), 'Writing docs.')
+check($(pop, '.skb-go').disabled, 'a branch needs at least one skill')
+const pickOpt = name => click($($$(pops(el)[0], '.skb-opt').find(o => text($(o, 'b')) === name), 'input'))
+await pickOpt('seed-1')
+await pickOpt('skill-c')
+check($$(pop, '.skb-pv li.skb-in b').map(text).join(',') === 'seed-1,skill-c' && text($(pop, '.skb-pvh')).startsWith('docs'), 'the new branch is previewed with its skills')
+await typeInto(nameIn, 'alpha')
+check($(pop, '.skb-go').disabled, 'a taken name cannot be saved')
+await typeInto(nameIn, 'docs')
+check(!$(pop, '.skb-go').disabled, 'name, text and skills given: Create branch is on')
+await click($(pop, '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'create', name: 'docs', description: 'Writing docs.', skills: ['seed-1', 'skill-c'], rev: 'r1' }), `Create branch posts the new branch (${JSON.stringify(lastChange())})`)
+
+// 6f. edit and delete a branch
+const ed = $($$(el, '.skb-br')[0], 'button.skb-ed')
+check(!!ed && ed.getAttribute('aria-label') === 'Edit alpha' && !!$(ed, 'svg[aria-hidden="true"]'), 'each branch head has an Edit icon button')
+await click(ed)
+pop = pops(el)[0]
+check($(pop, 'input[type=text]').value === 'alpha' && $(pop, 'textarea').value === 'Changes to the alpha service.' && $(pop, '.skb-go').disabled, 'Edit starts from the current name and text; nothing to save yet')
+await setText($(pop, 'textarea'), 'The alpha service.')
+await click($(pop, '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'edit', branch: 'alpha', name: 'alpha', description: 'The alpha service.', rev: 'r1' }), 'Save posts the edit')
+await click(ed)
+const callsBefore = changeCalls.length
+await click(btnText(el, 'Delete branch'))
+pop = pops(el)[0]
+check(pop.getAttribute('aria-label') === 'Delete alpha?' && text($(pop, 'p')) === 'Its 3 skills leave this branch. Skills on no other branch become seeds; every skill stays installed.' && changeCalls.length === callsBefore, 'Delete asks again and names what happens')
+await click(btnText(el, 'Delete'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'delete', branch: 'alpha', rev: 'r1' }), 'the second Delete posts it')
 check($$(el, 'button button').length === 0, 'no button inside another button')
+await unmountAll()
+
+// 6g. when editing is off, and while searching
+el = await mountPage(tree({ state: 'invalid', problem: 'x', branches: [] }), baseSkills())
+check($$(el, '.skb-add, .skb-nbb, .skb-addrow').length === 0, 'an invalid file offers no edits')
+await unmountAll()
+el = await mountPage(tree({ state: 'missing', branches: [], modified: null, rev: null }), baseSkills())
+check(!!$(el, '.skb-nbb') && $$(el, '.skb-add').length === 0, 'with no file, New branch is the way in')
+await click($(el, '.skb-nbb'))
+check(pops(el).length === 1, 'New branch opens with no file')
 await unmountAll()
 el = await mountPage(tree(), baseSkills())
 await typeInto($(el, '.skb-find input'), 'zebra')
-check($$(el, '.skb-addrow').length === 0, 'while searching, the branch Add rows step aside')
+check($$(el, '.skb-addrow, .skb-nbb').length === 0, 'while searching, the Add rows and New branch step aside')
 await unmountAll()
+check(mod.previewWindow(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'], ['j']).rows.join('') === 'efghij', 'a long preview keeps the joining skill in view')
+check(JSON.stringify(mod.previewWindow(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], ['c'])) === JSON.stringify({ rows: ['b', 'c', 'd', 'e', 'f', 'g'], above: 1, below: 1 }), 'a long preview counts the rows it hides')
 
-// 6c. where a request goes: a new chat the user can see
-stub.state.insertResult = true
-stub.calls.insert.length = 0; stub.calls.newChat.length = 0; stub.calls.notify.length = 0
-el = await mountPage(tree(), baseSkills())
-stub.state.insertFailTimes = 2
-await act(async () => { $$(el, '.skb-addrow button')[1].click(); await new Promise(r => setTimeout(r, 900)) })
-check(stub.calls.newChat.length === 1, 'a request opens one new chat')
-check(stub.calls.insert.length === 3 && stub.calls.insert.every(c => c[0] === 'new'), `the request waits for the new chat's box and goes only there (${stub.calls.insert.map(c => c[0])})`)
-check(stub.calls.notify.at(-1)?.kind === 'info' && stub.calls.notify.at(-1)?.message === 'Your request is in a new chat. Read it, then press Enter to send.', 'a notice says where the request went')
-stub.calls.insert.length = 0
-stub.state.insertResult = false
-await act(async () => { $$(el, '.skb-addrow button')[0].click(); await new Promise(r => setTimeout(r, 2500)) })
-check(clipboard.at(-1) === 'Load skill-branches:setup and help me add a skill to my alpha skill branch; ask me which one.' && stub.calls.notify.at(-1)?.kind === 'warning' && stub.calls.notify.at(-1)?.message === 'Copied the request. Paste it into the chat box and send it.', 'no chat box answers: copied, and a notice says so')
-check(stub.calls.insert.length > 1 && stub.calls.insert.length <= 12, `gives up after a bounded wait (${stub.calls.insert.length} tries)`)
-const rowRm = $(el, '.skb-br button.skb-rm')
-await act(async () => { rowRm.click(); await new Promise(r => setTimeout(r, 2500)) })
-check(rowRm.title === 'Copied — paste it into a chat' && $(rowRm, 'path')?.getAttribute('d') === 'M2.5 6.3 5 8.6l4.5-5.2', 'a copied request also shows the check')
-clipboardWorks = false
-const rowRm2 = $$(el, '.skb-br button.skb-rm')[1]
-await act(async () => { rowRm2.click(); await new Promise(r => setTimeout(r, 2500)) })
-check(rowRm2.title === 'Could not copy' && $(rowRm2, 'path')?.getAttribute('d') === 'M6 2.5v4.2M6 9.2v.3', 'a failed request shows a warning mark')
-clipboardWorks = true
-stub.state.insertResult = true
-stub.state.lostDrafts = 1
-stub.calls.insert.length = 0
-await act(async () => { $$(el, '.skb-addrow button')[0].click(); await new Promise(r => setTimeout(r, 900)) })
-check(stub.calls.insert.length === 2 && stub.calls.notify.at(-1)?.kind === 'info', `an insert the new chat's box does not show is tried again (${stub.calls.insert.length} tries)`)
-await unmountAll()
-stub.state.oldDesktop = true
-stub.state.insertResult = true
-stub.calls.insert.length = 0
-el = await mountPage(tree(), baseSkills())
-await click($$(el, '.skb-addrow button')[0])
-check(stub.calls.insert.length === 1 && stub.calls.insert[0][0] === null && text($$(el, '.skb-addrow button')[0]) === 'Added to the chat box', 'older app without new chats: the open chat box, as before')
-stub.state.oldDesktop = false
-await unmountAll()
-
-// 7. read-only
-check(restCalls.every(([p, o]) => p === '/tree' && (o === undefined || !o.method || o.method === 'GET')), `only GET /tree (${JSON.stringify([...new Set(restCalls.map(c => c[0]))])})`)
-check(storageWrites.every(k => k === 'seen'), `only the "seen" storage key is written (${[...new Set(storageWrites)]})`)
+// 7. what the page touches
+check(restCalls.every(([p, o]) => (p === '/tree' && (o === undefined || !o.method || o.method === 'GET')) || (p === '/change' && o?.method === 'POST')), `only GET /tree and POST /change (${JSON.stringify([...new Set(restCalls.map(c => c[0]))])})`)
+check(storageWrites.every(k => k === 'seen'), `storage: only the old "seen" key is removed (${[...new Set(storageWrites)]})`)
 check(stub.calls.setEnabled.length === 0, 'nothing toggled')
 
 // 8. errors
@@ -405,13 +463,13 @@ check(text($(el, '[role=alert]')) === 'Could not list your skills: offline.', 's
 await unmountAll()
 
 // 9. copy and theme
-el = await mountPage(tree({ ignored: ['"x"'] }), [...baseSkills(), skill('fresh-one', 'dev')])
+el = await mountPage(tree({ ignored: ['"x"'] }), baseSkills())
 const labels = $$(el, '*').flatMap(n => [n.getAttribute('aria-label'), n.getAttribute('title'), n.getAttribute('placeholder')]).filter(Boolean)
 check(!/\bskb\.[a-zA-Z]/.test(el.textContent + labels.join(' ')), 'no raw i18n key on screen or in labels')
 await unmountAll()
 
 const cssText = source.match(/const CSS = `([\s\S]*?)`/)[1]
-const vars = [...new Set([...source.matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]))].filter(v => !['--ground', '--ground2', '--h', '--tone', '--nw', '--dl'].includes(v))
+const vars = [...new Set([...source.matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]))].filter(v => !['--ground', '--ground2', '--h', '--tone', '--nw', '--dl', '--ar'].includes(v))
 const findAppCss = () => {
   if (process.env.HERMES_APP_CSS) return process.env.HERMES_APP_CSS
   const homes = [process.env.HERMES_HOME, process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'hermes'), path.join(os.homedir(), '.hermes')].filter(Boolean)
