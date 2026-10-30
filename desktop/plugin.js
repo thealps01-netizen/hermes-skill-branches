@@ -540,7 +540,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
   const popBody = () => {
     const b = m.branches.find(x => x.name === pop.branch)
     const k = b ? kOf(m.branches.indexOf(b)) : kOf(m.branches.length)
-    if (pop.kind === 'remove' && b) {
+    if (pop.kind === 'remove' && b && b.skills.includes(pop.skill)) {
       const others = branchesWith(pop.skill, b)
       return [t('skb.rmTitle', pop.skill, b.name), h(Fragment, null,
         h('h3', null, t('skb.rmTitle', pop.skill, b.name)),
@@ -550,7 +550,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
         problem,
         footer(() => save({ op: 'remove', branch: b.name, skill: pop.skill }), t('skb.rmGo'), true, true))]
     }
-    if (pop.kind === 'place') {
+    if (pop.kind === 'place' && m.installed.has(pop.skill) && !m.onBranch.has(pop.skill)) {
       const targets = m.branches.map((x, i) => ({ x, i })).filter(({ x }) => !x.skills.includes(pop.skill))
       const sel = m.branches.find(x => x.name === pop.sel)
       return [t('skb.placeTitle', pop.skill), h(Fragment, null,
@@ -613,7 +613,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       const name = pop.name ?? b.name
       const d = pop.desc ?? b.description
       const nameBad = name !== b.name && !NAME_RE.test(name)
-      const taken = m.branches.some(x => x !== b && x.name.toLowerCase() === name.toLowerCase())
+      const taken = name !== b.name && m.branches.some(x => x !== b && x.name.toLowerCase() === name.toLowerCase())
       const changed = name !== b.name || d.trim() !== b.description
       return [t('skb.editTitle', b.name), h(Fragment, null,
         h('h3', null, t('skb.editTitle', b.name)),

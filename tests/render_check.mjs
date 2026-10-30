@@ -438,10 +438,26 @@ pop = pops(el)[0]
 check(pop.getAttribute('aria-label') === 'Delete alpha?' && text($(pop, 'p')) === 'Its 3 skills leave this branch. Skills on no other branch become seeds; every skill stays installed.' && changeCalls.length === callsBefore, 'Delete asks again and names what happens')
 await click(btnText(el, 'Delete'))
 check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'delete', branch: 'alpha', rev: 'r1' }), 'the second Delete posts it')
+// a popover whose skill left the branch elsewhere closes when the page reads the file again
+await click($(alphaRow('skill-b'), 'button.skb-rm'))
+changeAnswer = { ok: false, problem: 'The branch file changed since this page loaded.' }
+const t0 = tree()
+treeAnswer = { ...t0, branches: t0.branches.map(x => (x.name === 'alpha' ? { ...x, skills: x.skills.filter(s => s !== 'skill-b') } : x)) }
+await click(btnText(el, 'Remove'))
+await settle()
+check(pops(el).length === 0, 'a Remove popover closes once its skill is no longer on the branch')
+changeAnswer = { ok: true, problem: null }
+treeAnswer = tree()
 check($$(el, 'button button').length === 0, 'no button inside another button')
 await unmountAll()
 
 // 6g. when editing is off, and while searching
+// a name that differs from another only in case can keep its name while its text is edited
+el = await mountPage(tree({ branches: [{ name: 'Alpha', description: 'A.', skills: ['skill-a'] }, { name: 'alpha', description: 'B.', skills: ['skill-b'] }] }), baseSkills())
+await click($($$(el, '.skb-br')[0], 'button.skb-ed'))
+await setText($(pops(el)[0], 'textarea'), 'A, edited.')
+check(!$(pops(el)[0], '.skb-go').disabled, 'an unchanged name is not flagged as taken')
+await unmountAll()
 el = await mountPage(tree({ state: 'invalid', problem: 'x', branches: [] }), baseSkills())
 check($$(el, '.skb-add, .skb-nbb, .skb-addrow').length === 0, 'an invalid file offers no edits')
 await unmountAll()
