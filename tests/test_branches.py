@@ -236,7 +236,7 @@ class SetupSkillTests(unittest.TestCase):
 
     def test_nothing_from_the_authors_setup(self):
         text = self.PATH.read_text(encoding="utf-8").lower()
-        for word in ("software-dev", "review-loop", "abap", "hermes-desktop-plugin-authoring", "enesa", "c:\\", "/users/"):
+        for word in ("software-dev", "review-loop", "abap", "unity", "hermes-desktop-plugin-authoring", "enesa", "c:\\", "/users/"):
             self.assertNotIn(word, text)
 
     def test_names_the_file_and_the_approval_step(self):

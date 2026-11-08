@@ -27,7 +27,7 @@ Each turn the plugin asks the model to name the branch a message belongs to and 
 2. **Ask about the work.** One short question at a time: what kinds of work they do with the assistant, and which skills they have seen skipped. Their answers decide the areas; do not copy anyone else's branches.
 3. **Draft a small file.**
    - One level only; no nested branches.
-   - Few branches, each one area of work with a one-line description that says where it stops ("Unity and game projects, not other code").
+   - Few branches, each one area of work with a one-line description that says where it stops.
    - In a branch, put the area's own skills that the model tends to skip.
    - A skill that holds rules for a whole kind of work (for example the user's general coding rules) goes into every branch where that kind of work happens, not into one branch only. Otherwise a task that fits one branch loses the rules kept in another.
    - Use only names that `skills_list` returned.
