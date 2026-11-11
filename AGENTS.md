@@ -2,9 +2,10 @@
 
 Native Hermes plugin with a desktop page that edits the branch file. `__init__.py` registers one cache-safe system-prompt section
 (`skill-branches.tree`, the branch list, rendered once per new session), one `pre_llm_call` hook (a
-one-sentence directive on every turn) and one `pre_tool_call` hook (checkpoints). `checkpoints.py`
-decides whether a tool call matches a checkpoint and keeps, per session, the skills the model asked
-for and the checkpoints that already stopped a call. `branches.py` loads and validates the branch file and renders
+one-sentence directive on every turn) and three hooks for checkpoints: `pre_tool_call` stops a call,
+`post_tool_call` records a finished skill load, `post_compaction` starts the session over.
+`checkpoints.py` decides whether a tool call matches a checkpoint and keeps, per session, the skills
+the model loaded and the checkpoints that already stopped a call. `branches.py` loads and validates the branch file and renders
 both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
 serves `GET /tree` (that inspection, plus the enabled plugin skills from Hermes' plugin manager) and
 `POST /change` (one edit, through `branches.change()`) to `desktop/plugin.js`, the page; the other
@@ -35,7 +36,8 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
   matching tool call once per session instead of running it. Without a `checkpoints` list no call
   is ever stopped. An error in the hook lets the call run (one warning), never stops it.
 - `checkpoints.py` holds no tool, command or skill name of its own except `skill_view`, the tool
-  that loads a skill; what to match comes from the file.
+  that loads a skill, and the argument names that carry shell or script text (`command`, `code`);
+  what to match comes from the file.
 - A swallowed failure leaves exactly one `logger.warning` line starting with `skill-branches: `,
   naming the reason and the exception class only; never `str(exc)` or file content.
 - The plugin never loads a skill itself and never forces a whole branch into context; it only asks the

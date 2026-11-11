@@ -37,6 +37,7 @@ const en = {
     cpLead: 'Before one of these calls runs, the assistant is asked once per chat to load the skills beside it. They apply on every branch and are edited in the branch file.',
     cpBefore: 'Before',
     cpMissing: 'not installed',
+    cpLeftOut: 'Left out of the file because they are not valid:',
     add: 'Add to a branch',
     addLabel: name => `Put ${name} on a branch`,
     addTo: name => `Add a skill to ${name}`,
@@ -275,6 +276,7 @@ const CSS = `
 .skb-cps{display:flex;flex-wrap:wrap;gap:2px 14px;min-width:0}
 .skb-cps b{font-weight:500;overflow-wrap:anywhere}
 .skb-cps b.skb-miss{font-weight:400;font-style:italic;color:var(--ui-text-secondary)}
+.skb-cpx{margin:10px 0 0;font-size:13px;color:var(--ui-text-primary)}
 .skb-err{margin:10px 0 0;padding:7px 10px;border-radius:8px;border:1px solid color-mix(in srgb,var(--ui-red) 55%,transparent);background:color-mix(in srgb,var(--ui-red) 10%,transparent)}
 .skb-pf{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--ui-stroke-tertiary)}
 .skb-pf small{font-size:12px;color:var(--ui-text-tertiary);margin-right:auto}
@@ -770,7 +772,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
 }
 
 // Read-only: checkpoints are few and are edited in the branch file.
-function Checkpoints({ points, skills, t }) {
+function Checkpoints({ points, problems, skills, t }) {
   const installed = new Set(skills.map(s => s.name))
   const where = c => (c.where ? ` (${Object.entries(c.where).map(([k, v]) => `${k}: ${v}`).join(', ')})` : '')
   return h('section', { className: 'skb-cp', 'aria-label': t('skb.cpTitle') },
@@ -779,7 +781,8 @@ function Checkpoints({ points, skills, t }) {
       h('span', { className: 'skb-cpb' }, t('skb.cpBefore'), ' ', h('code', null, c.before), where(c)),
       h('span', { className: 'skb-cps' }, c.skills.map(s => (installed.has(s)
         ? h('b', { key: s }, s)
-        : h('b', { key: s, className: 'skb-miss' }, `${s} (${t('skb.cpMissing')})`))))))))
+        : h('b', { key: s, className: 'skb-miss' }, `${s} (${t('skb.cpMissing')})`))))))),
+    problems.length ? h('div', { className: 'skb-cpx', role: 'status' }, t('skb.cpLeftOut'), ' ', problems.join(' ')) : null)
 }
 
 function createPage(ctx) {
@@ -803,7 +806,8 @@ function createPage(ctx) {
         tree.state === 'missing' ? jsx(Banner, { tone: 'info', title: t('skb.missingTitle'), body: t('skb.missingBody'), detail: tree.path, action: jsx(SetupButton, { ctx, t }) }) : null,
         tree.state === 'ok' && tree.ignored?.length ? jsx(Banner, { tone: 'warn', title: t('skb.ignoredTitle'), body: t('skb.ignoredBody'), items: tree.ignored }) : null,
         jsx(Tree, { ctx, tree, skills, refresh, t }),
-        tree.state === 'ok' && tree.checkpoints?.length ? jsx(Checkpoints, { points: tree.checkpoints, skills, t }) : null)
+        tree.state === 'ok' && (tree.checkpoints?.length || tree.checkpoint_problems?.length)
+          ? jsx(Checkpoints, { points: tree.checkpoints || [], problems: tree.checkpoint_problems || [], skills, t }) : null)
     }
     return h('div', { className: 'skb-page' }, h('style', null, CSS),
       h('section', { className: 'skb' },

@@ -59,21 +59,34 @@ def _check(data):
         problem = _branch_problem(branch)
         if problem:
             return f"{_label(i, branch)}: {problem}"
-    points = data.get("checkpoints", [])
-    if not isinstance(points, list):
-        return '"checkpoints" must be a list.'
-    for i, point in enumerate(points, 1):
-        problem = _checkpoint_problem(point)
-        if problem:
-            before = point.get("before") if isinstance(point, dict) else None
-            named = f' ("{" ".join(before.split())}")' if isinstance(before, str) and before.strip() else ""
-            return f"Checkpoint {i}{named}: {problem}"
     return None
+
+
+# A bad checkpoint is left out and named; it never turns the branches off.
+def _checkpoints(data):
+    rows = data.get("checkpoints", [])
+    if not isinstance(rows, list):
+        return [], [], ['"checkpoints" must be a list.']
+    points, ignored, problems = [], [], []
+    for i, row in enumerate(rows, 1):
+        problem = _checkpoint_problem(row)
+        if problem:
+            before = row.get("before") if isinstance(row, dict) else None
+            named = f' ("{" ".join(before.split())}")' if isinstance(before, str) and before.strip() else ""
+            problems.append(f"Checkpoint {i}{named}: {problem}")
+            continue
+        before = " ".join(row["before"].split())
+        points.append({"before": before,
+                       **({"where": {k.strip(): v.strip() for k, v in row["where"].items()}} if "where" in row else {}),
+                       "skills": [s.strip() for s in row["skills"]]})
+        ignored += [f'Checkpoint "{before}": "{k}"' for k in row if k not in CHECKPOINT_KEYS]
+    return points, ignored, problems
 
 
 def inspect(path):
     path = Path(path)
-    info = {"state": "missing", "problem": None, "error": None, "group": "", "branches": [], "checkpoints": [], "ignored": [],
+    info = {"state": "missing", "problem": None, "error": None, "group": "", "branches": [], "checkpoints": [], "checkpoint_problems": [],
+            "ignored": [],
             "modified": None, "rev": None, "path": str(path)}
     if not path.is_file():
         return info
@@ -93,14 +106,11 @@ def inspect(path):
     items = data["branches"]
     ignored = [f'"{k}"' for k in data if k not in TOP_KEYS]
     ignored += [f'Branch "{b["name"].strip()}": "{k}"' for b in items for k in b if k not in BRANCH_KEYS]
-    points = [{"before": " ".join(p["before"].split()),
-               **({"where": {k.strip(): v.strip() for k, v in p["where"].items()}} if "where" in p else {}),
-               "skills": [s.strip() for s in p["skills"]]} for p in data.get("checkpoints", [])]
-    ignored += [f'Checkpoint "{" ".join(p["before"].split())}": "{k}"'
-                for p in data.get("checkpoints", []) for k in p if k not in CHECKPOINT_KEYS]
+    points, extra, problems = _checkpoints(data)
+    ignored += extra
     group = data.get("group")
     return dict(info, state="ok", group=group.strip() if isinstance(group, str) else "", ignored=ignored,
-                checkpoints=points,
+                checkpoints=points, checkpoint_problems=problems,
                 branches=[{"name": b["name"].strip(), "description": b["description"].strip(),
                            "skills": [s.strip() for s in b["skills"]]} for b in items])
 
@@ -207,7 +217,7 @@ def _apply(data, req):
 
 def _dump(data, newline):
     def value(key, v):
-        if key == "branches" and v:
+        if key in ("branches", "checkpoints") and isinstance(v, list) and v:
             rows = [f"    {json.dumps(b, ensure_ascii=False)}" for b in v]
             return "[" + newline + ("," + newline).join(rows) + newline + "  ]"
         return json.dumps(v, ensure_ascii=False)
@@ -297,10 +307,13 @@ def load(path):
     if info["state"] == "invalid":
         logger.warning("skill-branches: branch file is invalid and was ignored (%s)", info["error"])
         return None
+    if info["checkpoint_problems"]:
+        logger.warning("skill-branches: %d checkpoint(s) in the branch file are invalid and were left out",
+                       len(info["checkpoint_problems"]))
     return info["branches"] if info["state"] == "ok" else None
 
 
-# Read on every tool call: no warning here; load() already reports an invalid file once per turn.
+# Read on every tool call: no warning here; load() already reports a problem once per turn.
 def load_checkpoints(path):
     info = inspect(path)
     return info["checkpoints"] if info["state"] == "ok" else []

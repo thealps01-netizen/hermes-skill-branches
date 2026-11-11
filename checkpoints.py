@@ -1,10 +1,13 @@
 """skill-branches: checkpoints. Before a named tool or command runs, ask once for skills not loaded yet."""
+import json
 import re
 import threading
 from fnmatch import fnmatchcase
 from collections import OrderedDict
 
 SKILL_TOOL = "skill_view"
+# Arguments that carry shell or script text: a terminal call's command, a script tool's code.
+COMMAND_ARGS = ("command", "code")
 # Words of a command checkpoint must follow each other inside one simple command.
 _SAME_COMMAND = r"[^|;&\n]*?"
 
@@ -14,8 +17,10 @@ def _word(word):
 
 
 def matches(before, tool_name, args, where=None):
-    """True when `before` is the tool's exact name, or its words appear in order in the call's command text.
+    """True when the call is the one `before` names.
 
+    One word names a tool and matches that tool only. Two or more words name a command and match
+    when they appear in that order inside one simple command of the call's command or script text.
     `where` narrows the match: every named argument must be a text matching its pattern (`*` wildcards,
     letter case ignored).
     """
@@ -24,12 +29,27 @@ def matches(before, tool_name, args, where=None):
         value = args.get(name)
         if not isinstance(value, str) or not fnmatchcase(value.lower(), pattern.lower()):
             return False
-    if tool_name == before:
-        return True
-    command = args.get("command")
-    if not isinstance(command, str):
-        return False
-    return re.search(_SAME_COMMAND.join(_word(w) for w in before.split()), command) is not None
+    words = before.split()
+    if len(words) < 2:
+        return tool_name == before
+    pattern = _SAME_COMMAND.join(_word(w) for w in words)
+    return any(isinstance(args.get(a), str) and re.search(pattern, args[a]) for a in COMMAND_ARGS)
+
+
+def loaded_names(args, result):
+    """Names a finished skill load counts under: the name asked for and the name the host returned.
+
+    Empty when the load failed or its result cannot be read.
+    """
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, dict) or data.get("success") is not True:
+        return []
+    asked = args.get("name") if isinstance(args, dict) else None
+    names = [n.strip() for n in (asked, data.get("name")) if isinstance(n, str) and n.strip()]
+    return list(dict.fromkeys(names))
 
 
 def _key(point):
@@ -37,9 +57,10 @@ def _key(point):
 
 
 class Gate:
-    """Remembers, per session, which skills were requested and which checkpoints already asked.
+    """Remembers, per session, which skills were loaded and which checkpoints already asked.
 
     A checkpoint asks at most once per session, so a skill that cannot be loaded never causes a loop.
+    forget() starts a session over: after a compaction the loaded skills are no longer in the model's context.
     State lives in memory: after a process restart a checkpoint may ask once more.
     """
 
@@ -58,16 +79,21 @@ class Gate:
             self._state.popitem(last=False)
         return entry
 
+    def loaded(self, session_id, names):
+        names = [n for n in names if isinstance(n, str) and n]
+        if session_id and names:
+            with self._lock:
+                self._entry(session_id)[0].update(names)
+
+    def forget(self, session_id):
+        with self._lock:
+            self._state.pop(session_id, None)
+
     def decide(self, points, tool_name, args, session_id):
         """Return the text that replaces the call's result, or None to let the call run."""
-        if not session_id or not points:
+        if not session_id or not points or tool_name == SKILL_TOOL:
             return None
         with self._lock:
-            if tool_name == SKILL_TOOL:
-                name = args.get("name") if isinstance(args, dict) else None
-                if isinstance(name, str) and name.strip():
-                    self._entry(session_id)[0].add(name.strip())
-                return None
             hit = [p for p in points if matches(p["before"], tool_name, args, p.get("where"))]
             if not hit:
                 return None

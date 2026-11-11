@@ -497,6 +497,12 @@ check(text($(cpRows[0], 'code')) === 'send_helper' && text($(cpRows[0], '.skb-cp
 check(text($(cpRows[1], '.skb-cpb')) === 'Before save_text (path: *.md)', `checkpoint row shows its argument pattern (${text($(cpRows[1], '.skb-cpb'))})`)
 check($$(cpRows[1], '.skb-cps b.skb-miss').map(text).join() === 'skill-gone (not installed)', 'checkpoint skill that is not installed is marked in words')
 check(!$(el, '.skb-cp button') && !$(el, '.skb-cp input'), 'checkpoint list is read-only')
+check(!$(el, '.skb-cpx'), 'no checkpoint notice when every checkpoint is valid')
+await unmountAll()
+el = await mountPage(tree({ checkpoints: [], checkpoint_problems: ['Checkpoint 1 ("x"): "skills" must be a non-empty list of skill names.'] }), baseSkills())
+check($(el, '.skb-cp') && $$(el, '.skb-cp li').length === 0, 'checkpoint section shows when only left-out checkpoints exist')
+check(text($(el, '.skb-cpx')).startsWith('Left out of the file') && text($(el, '.skb-cpx')).includes('Checkpoint 1 ("x")'), `left-out checkpoints are named (${text($(el, '.skb-cpx'))})`)
+check($(el, '.skb-cpx').getAttribute('role') === 'status', 'left-out notice is announced')
 await unmountAll()
 
 // 9. copy and theme

@@ -64,18 +64,25 @@ Checkpoints are an optional second list in the same file:
 ]}
 ```
 
-- `before` is a tool's exact name, or the words of a command. Command words must appear in that
-  order inside one simple command of a call's `command` argument (`vcs -C repo save` matches
-  `vcs save`; `vcs log | grep save` does not). The match is on words, not on meaning: a command
-  that only mentions the words (`vcs log --grep save`) also matches, and costs one skill load.
+- `before` with one word is a tool's exact name and matches that tool only. With two or more words
+  it is a command: the words must appear in that order inside one simple command of a call's
+  `command` or `code` text (`vcs -C repo save` matches `vcs save`; `vcs log | grep save` does not).
+  The match is on words, not on meaning: a command that only mentions the words
+  (`vcs log --grep save`) also matches, and costs one skill load.
+- A tool that the model calls from inside a script tool is not seen by a one-word checkpoint; a
+  command in the script's text is.
 - `where` (optional) narrows a checkpoint to calls whose named arguments match a pattern (`*`
   wildcard, letter case ignored).
 - A checkpoint stops a call at most once per session, also when the skill is never loaded, so a
-  wrong skill name cannot cause a loop. A skill counts as loaded once the model has called
-  `skill_view` for it in that session.
+  wrong skill name cannot cause a loop. A skill counts as loaded once `skill_view` has returned it
+  in that session. After a compaction the session starts over: the loaded text is gone from the
+  model's context, so a checkpoint asks again.
+- A stop is a reminder, not a lock: a model that repeats the call without loading the skill gets
+  through. A subagent has its own session and is asked on its own.
 - What was asked is kept in memory, per process: after Hermes restarts, a checkpoint may ask once
   more in a session that continues.
-- An invalid `checkpoints` list makes the whole file invalid (routing is off until it is fixed).
+- An invalid checkpoint is left out, logged once per turn and named on the desktop page; the
+  branches and the other checkpoints keep working.
 - An error inside the plugin never stops a call: the call runs and one warning is logged.
 - The desktop page lists the checkpoints and marks skills that are not installed; they are edited in
   the file.

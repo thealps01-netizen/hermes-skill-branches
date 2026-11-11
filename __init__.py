@@ -47,6 +47,24 @@ def _pre_tool_call(tool_name="", args=None, session_id="", **_):
     return {"action": "block", "message": message}
 
 
+def _post_tool_call(tool_name="", args=None, result=None, session_id="", **_):
+    if tool_name != checkpoints.SKILL_TOOL:
+        return
+    try:
+        _gate.loaded(session_id, checkpoints.loaded_names(args, result))
+    except Exception as exc:
+        logger.warning("skill-branches: skill load not recorded (%s)", type(exc).__name__)
+
+
+# A compaction removes loaded skill text from the model's context, so its session starts over.
+def _post_compaction(session_id="", old_session_id="", **_):
+    try:
+        for sid in (session_id, old_session_id):
+            _gate.forget(sid)
+    except Exception as exc:
+        logger.warning("skill-branches: compaction not recorded (%s)", type(exc).__name__)
+
+
 def _description(path):
     for line in path.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n---\n", 1)[0].splitlines()[1:]:
         key, _, value = line.partition(":")
@@ -59,6 +77,12 @@ def register(ctx):
     ctx.register_system_prompt_section(SECTION_ID, _section, position="after_memory", max_chars=4000)
     ctx.register_hook("pre_llm_call", _pre_llm_call)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    # Without these two a checkpoint still asks once; it only cannot see a load or a compaction.
+    for name, fn in (("post_tool_call", _post_tool_call), ("post_compaction", _post_compaction)):
+        try:
+            ctx.register_hook(name, fn)
+        except Exception as exc:
+            logger.warning("skill-branches: %s hook not registered (%s)", name, type(exc).__name__)
     try:  # hosts without plugin skills keep routing; only the guided setup is missing
         ctx.register_skill("setup", SETUP_SKILL, _description(SETUP_SKILL))
     except Exception as exc:
