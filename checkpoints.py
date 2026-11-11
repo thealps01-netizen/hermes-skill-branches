@@ -9,11 +9,25 @@ SKILL_TOOL = "skill_view"
 # Arguments that carry shell or script text: a terminal call's command, a script tool's code.
 COMMAND_ARGS = ("command", "code")
 # Words of a command checkpoint must follow each other inside one simple command.
-_SAME_COMMAND = r"[^|;&\n]*?"
+_SEPARATOR = re.compile(r"[|;&\n]")
 
 
 def _word(word):
-    return r"(?<![\w-])" + re.escape(word) + r"(?![\w-])"
+    return re.compile(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])")
+
+
+# One pass per piece: a pattern with gaps between the words backtracks for seconds on a long line.
+def _in_order(words, text):
+    for piece in _SEPARATOR.split(text):
+        end = 0
+        for word in words:
+            found = word.search(piece, end)
+            if not found:
+                break
+            end = found.end()
+        else:
+            return True
+    return False
 
 
 def matches(before, tool_name, args, where=None):
@@ -32,8 +46,8 @@ def matches(before, tool_name, args, where=None):
     words = before.split()
     if len(words) < 2:
         return tool_name == before
-    pattern = _SAME_COMMAND.join(_word(w) for w in words)
-    return any(isinstance(args.get(a), str) and re.search(pattern, args[a]) for a in COMMAND_ARGS)
+    words = [_word(w) for w in words]
+    return any(isinstance(args.get(a), str) and _in_order(words, args[a]) for a in COMMAND_ARGS)
 
 
 def loaded_names(args, result):
@@ -53,7 +67,7 @@ def loaded_names(args, result):
 
 
 def _key(point):
-    return (point["before"], tuple(sorted(point.get("where", {}).items())))
+    return (point["before"], tuple(sorted(point.get("where", {}).items())), tuple(point["skills"]))
 
 
 class Gate:
@@ -93,10 +107,10 @@ class Gate:
         """Return the text that replaces the call's result, or None to let the call run."""
         if not session_id or not points or tool_name == SKILL_TOOL:
             return None
+        hit = [p for p in points if matches(p["before"], tool_name, args, p.get("where"))]
+        if not hit:
+            return None
         with self._lock:
-            hit = [p for p in points if matches(p["before"], tool_name, args, p.get("where"))]
-            if not hit:
-                return None
             loaded, asked = self._entry(session_id)
             missing = []
             for point in hit:

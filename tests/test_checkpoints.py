@@ -137,6 +137,20 @@ class MatchTests(unittest.TestCase):
             with self.subTest(command):
                 self.assertFalse(checkpoints.matches("vcs save", "terminal", {"command": command}))
 
+    def test_a_long_one_line_script_is_matched_in_linear_time(self):
+        import time
+        text = "x = '" + "vcs add " * 800 + "'"  # 6.4 KB, no separator, last word never present
+        start = time.perf_counter()
+        self.assertFalse(checkpoints.matches("vcs add save", "run_script", {"code": text}))
+        self.assertTrue(checkpoints.matches("vcs add save", "run_script", {"code": text + " save"}))
+        self.assertLess(time.perf_counter() - start, 1.0)
+
+    def test_words_of_a_command_are_not_joined_across_separators_or_out_of_order(self):
+        for command in ("vcs add; other save", "vcs add\nsave", "save add vcs", "vcs save add"):
+            with self.subTest(command):
+                self.assertFalse(checkpoints.matches("vcs add save", "terminal", {"command": command}))
+        self.assertTrue(checkpoints.matches("vcs add save", "terminal", {"command": "x | vcs -q add -A save && y"}))
+
     def test_arguments_without_a_command_text_never_match_a_command(self):
         for args in ({}, {"command": 3}, None, {"text": "vcs save"}):
             with self.subTest(args):
@@ -199,6 +213,13 @@ class GateTests(unittest.TestCase):
         for name in ("message-rules", "review-rules", "brief-rules"):
             self.assertIn(name, got)
         self.assertIsNone(self.gate.decide(points, "terminal", {"command": "vcs init && vcs save"}, "s1"))
+
+    def test_two_checkpoints_on_the_same_call_with_different_skills_both_ask(self):
+        points = [{"before": "send_helper", "skills": ["a"]}, {"before": "send_helper", "skills": ["b"]}]
+        got = self.gate.decide(points, "send_helper", {}, "s1")
+        self.assertIn("'a'", got)
+        self.assertIn("'b'", got)
+        self.assertIsNone(self.gate.decide(points, "send_helper", {}, "s1"))
 
     def test_forgetting_a_session_makes_its_checkpoints_ask_again(self):
         self.gate.loaded("s1", ["brief-rules"])
