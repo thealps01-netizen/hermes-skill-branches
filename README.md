@@ -68,7 +68,8 @@ Checkpoints are an optional second list in the same file:
   it is a command: the words must appear in that order inside one simple command of a call's
   `command` or `code` text (`vcs -C repo save` matches `vcs save`; `vcs log | grep save` does not).
   The match is on words, not on meaning: a command that only mentions the words
-  (`vcs log --grep save`) also matches, and costs one skill load.
+  (`vcs log --grep save`) also matches, and costs one skill load. A command's words cannot hold
+  `|`, `;` or `&`.
 - A tool that the model calls from inside a script tool is not seen by a one-word checkpoint; a
   command in the script's text is.
 - `where` (optional) narrows a checkpoint to calls whose named arguments match a pattern (`*`

@@ -9,16 +9,18 @@ SKILL_TOOL = "skill_view"
 # Arguments that carry shell or script text: a terminal call's command, a script tool's code.
 COMMAND_ARGS = ("command", "code")
 # Words of a command checkpoint must follow each other inside one simple command.
-_SEPARATOR = re.compile(r"[|;&\n]")
+SEPARATORS = "|;&\n"
+_SPLIT = re.compile("[" + re.escape(SEPARATORS) + "]")
 
 
 def _word(word):
     return re.compile(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])")
 
 
-# One pass per piece: a pattern with gaps between the words backtracks for seconds on a long line.
+# One pass per simple command: a pattern with gaps between the words backtracks for seconds on a
+# long line. The branch file refuses a command word that holds a separator; here it never matches.
 def _in_order(words, text):
-    for piece in _SEPARATOR.split(text):
+    for piece in _SPLIT.split(text):
         end = 0
         for word in words:
             found = word.search(piece, end)

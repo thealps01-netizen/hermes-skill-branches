@@ -64,6 +64,18 @@ class FileTests(unittest.TestCase):
                 self.assertEqual(got["branches"][0]["name"], "alpha")
                 self.assertEqual(got["checkpoints"], [POINTS[0]] if label == "no skills" else [])
 
+    def test_a_command_checkpoint_whose_word_holds_a_separator_is_left_out(self):
+        for before in ("make 2>&1", "echo a;b", "x a|b"):
+            with self.subTest(before):
+                got = _inspect({"branches": BRANCHES, "checkpoints": [{"before": before, "skills": ["s"]}]})
+                self.assertEqual(got["checkpoints"], [])
+                self.assertEqual(got["checkpoint_problems"],
+                                 [f'Checkpoint 1 ("{before}"): "before" names one command; its words cannot hold | ; or &.'])
+        self.assertEqual(_inspect({"branches": BRANCHES, "checkpoints": [{"before": "a&b", "skills": ["s"]}]})["checkpoint_problems"], [])
+
+    def test_the_file_rule_and_the_matcher_agree_on_separators(self):
+        self.assertEqual(branches.COMMAND_SEPARATORS + "\n", checkpoints.SEPARATORS)
+
     def test_a_valid_file_has_no_checkpoint_problems(self):
         self.assertEqual(_inspect(TREE)["checkpoint_problems"], [])
 
@@ -150,6 +162,19 @@ class MatchTests(unittest.TestCase):
             with self.subTest(command):
                 self.assertFalse(checkpoints.matches("vcs add save", "terminal", {"command": command}))
         self.assertTrue(checkpoints.matches("vcs add save", "terminal", {"command": "x | vcs -q add -A save && y"}))
+
+    def test_a_command_word_that_holds_a_separator_never_matches(self):
+        for before in ("make 2>&1", "echo a;b", "x a|b"):
+            with self.subTest(before):
+                self.assertFalse(checkpoints.matches(before, "terminal", {"command": before}))
+
+    def test_many_short_commands_before_a_late_word_are_matched_in_linear_time(self):
+        import time
+        text = "vcs add\n" * 20000 + "save"
+        start = time.perf_counter()
+        self.assertFalse(checkpoints.matches("vcs add save", "terminal", {"command": text}))
+        self.assertTrue(checkpoints.matches("vcs add save", "terminal", {"command": text + "\nvcs add save"}))
+        self.assertLess(time.perf_counter() - start, 1.0)
 
     def test_arguments_without_a_command_text_never_match_a_command(self):
         for args in ({}, {"command": 3}, None, {"text": "vcs save"}):

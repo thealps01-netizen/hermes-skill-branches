@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 TOP_KEYS = ("group", "branches", "checkpoints")
 BRANCH_KEYS = ("name", "description", "skills")
 CHECKPOINT_KEYS = ("before", "where", "skills")
+COMMAND_SEPARATORS = "|;&"  # what ends a simple command in checkpoints.py, without the newline
 
 
 def _branch_problem(branch):
@@ -37,6 +38,9 @@ def _checkpoint_problem(point):
         return "must be an object with before and skills."
     if not (isinstance(point.get("before"), str) and point["before"].strip()):
         return '"before" must be a non-empty text.'
+    words = point["before"].split()
+    if len(words) > 1 and any(s in w for w in words for s in COMMAND_SEPARATORS):
+        return '"before" names one command; its words cannot hold | ; or &.'
     if not (isinstance(point.get("skills"), list) and point["skills"]
             and all(isinstance(s, str) and s.strip() for s in point["skills"])):
         return '"skills" must be a non-empty list of skill names.'
