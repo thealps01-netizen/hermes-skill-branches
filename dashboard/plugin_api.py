@@ -30,7 +30,7 @@ def tree_payload(path=None):
     except Exception as exc:
         logger.warning("skill-branches: panel could not check the branch file (%s)", type(exc).__name__)
         info = {"state": "invalid", "problem": "The branch file could not be checked.", "group": "",
-                "branches": [], "ignored": [], "modified": None, "path": str(path or "")}
+                "branches": [], "checkpoints": [], "ignored": [], "modified": None, "path": str(path or "")}
     payload = {k: v for k, v in info.items() if k != "error"}
     payload["plugin_skills"] = _plugin_skills()
     return payload

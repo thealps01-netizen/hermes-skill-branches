@@ -67,6 +67,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(warn.call_count, 1)
         self.assertNotIn("secret detail", str(warn.call_args))
 
+    def test_tree_carries_the_checkpoints(self):
+        points = [{"before": "send_helper", "skills": ["brief-rules"]}]
+        self.file.write_text(json.dumps(dict(TREE, checkpoints=points)), encoding="utf-8")
+        self.assertEqual(self.get()["checkpoints"], points)
+        self.file.write_text(json.dumps(TREE), encoding="utf-8")
+        self.assertEqual(self.get()["checkpoints"], [])
+
     def test_tree_is_read_only(self):
         self.file.write_text(json.dumps(TREE), encoding="utf-8")
         before = self.file.read_bytes(), self.file.stat().st_mtime_ns

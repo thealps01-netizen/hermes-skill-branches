@@ -5,7 +5,7 @@
  * Run: npm ci      (once, in tests/: React and jsdom pinned to the core desktop app's versions)
  *      node tests/render_check.mjs      (exit 0 = passed)
  * The colour-token check reads the desktop app's compiled stylesheet: set HERMES_APP_CSS to an
- * index-*.css, or it is looked up under <hermes home>/hermes-agent/apps/desktop/dist/assets.
+ * main-*.css, or it is looked up under <hermes home>/hermes-agent/apps/desktop/dist/assets.
  *
  * Locks:
  *   1. Registration: one route (/skill-branches) and one sidebar nav row, no pane, one English bundle.
@@ -486,6 +486,19 @@ el = await mountPage(tree(), baseSkills(), { skillsFail: 'offline' })
 check(text($(el, '[role=alert]')) === 'Could not list your skills: offline.', 'skill-list failure named')
 await unmountAll()
 
+// 8b. checkpoints: a read-only list from the branch file
+el = await mountPage(tree(), baseSkills())
+check(!$(el, '.skb-cp'), 'no checkpoint list when the file has none')
+await unmountAll()
+el = await mountPage(tree({ checkpoints: [{ before: 'send_helper', skills: ['skill-a'] }, { before: 'save_text', where: { path: '*.md' }, skills: ['skill-b', 'skill-gone'] }] }), baseSkills())
+const cpRows = $$(el, '.skb-cp li')
+check(text($(el, '.skb-cp h3')) === 'Checkpoints' && cpRows.length === 2, `checkpoint list with one row per checkpoint (${cpRows.length})`)
+check(text($(cpRows[0], 'code')) === 'send_helper' && text($(cpRows[0], '.skb-cps')) === 'skill-a', 'checkpoint row names the call and its skill')
+check(text($(cpRows[1], '.skb-cpb')) === 'Before save_text (path: *.md)', `checkpoint row shows its argument pattern (${text($(cpRows[1], '.skb-cpb'))})`)
+check($$(cpRows[1], '.skb-cps b.skb-miss').map(text).join() === 'skill-gone (not installed)', 'checkpoint skill that is not installed is marked in words')
+check(!$(el, '.skb-cp button') && !$(el, '.skb-cp input'), 'checkpoint list is read-only')
+await unmountAll()
+
 // 9. copy and theme
 el = await mountPage(tree({ ignored: ['"x"'] }), baseSkills())
 const labels = $$(el, '*').flatMap(n => [n.getAttribute('aria-label'), n.getAttribute('title'), n.getAttribute('placeholder')]).filter(Boolean)
@@ -500,13 +513,13 @@ const findAppCss = () => {
   for (const home of homes) {
     const dir = path.join(home, 'hermes-agent', 'apps', 'desktop', 'dist', 'assets')
     if (!existsSync(dir)) continue
-    const css = readdirSync(dir).filter(f => /^index-.*\.css$/.test(f)).map(f => path.join(dir, f)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+    const css = readdirSync(dir).filter(f => /^(index|main)-.*\.css$/.test(f)).map(f => path.join(dir, f)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
     if (css.length) return css[0]
   }
   return null
 }
 const appCssPath = findAppCss()
-if (!appCssPath) check(false, 'app stylesheet not found: set HERMES_APP_CSS to the desktop app\'s dist/assets/index-*.css')
+if (!appCssPath) check(false, 'app stylesheet not found: set HERMES_APP_CSS to the desktop app\'s dist/assets/main-*.css')
 else {
   const appCss = readFileSync(appCssPath, 'utf8')
   const defined = v => appCss.includes(`${v}:`)

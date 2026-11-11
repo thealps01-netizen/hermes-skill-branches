@@ -12,8 +12,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-TOP_KEYS = ("group", "branches")
+TOP_KEYS = ("group", "branches", "checkpoints")
 BRANCH_KEYS = ("name", "description", "skills")
+CHECKPOINT_KEYS = ("before", "where", "skills")
 
 
 def _branch_problem(branch):
@@ -29,6 +30,23 @@ def _branch_problem(branch):
     return None
 
 
+# A checkpoint: before the tool or command named in "before" runs (optionally only "where" its
+# arguments match), these skills should be loaded.
+def _checkpoint_problem(point):
+    if not isinstance(point, dict):
+        return "must be an object with before and skills."
+    if not (isinstance(point.get("before"), str) and point["before"].strip()):
+        return '"before" must be a non-empty text.'
+    if not (isinstance(point.get("skills"), list) and point["skills"]
+            and all(isinstance(s, str) and s.strip() for s in point["skills"])):
+        return '"skills" must be a non-empty list of skill names.'
+    where = point.get("where")
+    if "where" in point and not (isinstance(where, dict) and where and all(
+            isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip() for k, v in where.items())):
+        return '"where" must be an object of argument names and patterns.'
+    return None
+
+
 def _label(index, branch):
     name = branch.get("name") if isinstance(branch, dict) else None
     return f'Branch {index} ("{name.strip()}")' if isinstance(name, str) and name.strip() else f"Branch {index}"
@@ -41,12 +59,21 @@ def _check(data):
         problem = _branch_problem(branch)
         if problem:
             return f"{_label(i, branch)}: {problem}"
+    points = data.get("checkpoints", [])
+    if not isinstance(points, list):
+        return '"checkpoints" must be a list.'
+    for i, point in enumerate(points, 1):
+        problem = _checkpoint_problem(point)
+        if problem:
+            before = point.get("before") if isinstance(point, dict) else None
+            named = f' ("{" ".join(before.split())}")' if isinstance(before, str) and before.strip() else ""
+            return f"Checkpoint {i}{named}: {problem}"
     return None
 
 
 def inspect(path):
     path = Path(path)
-    info = {"state": "missing", "problem": None, "error": None, "group": "", "branches": [], "ignored": [],
+    info = {"state": "missing", "problem": None, "error": None, "group": "", "branches": [], "checkpoints": [], "ignored": [],
             "modified": None, "rev": None, "path": str(path)}
     if not path.is_file():
         return info
@@ -66,8 +93,14 @@ def inspect(path):
     items = data["branches"]
     ignored = [f'"{k}"' for k in data if k not in TOP_KEYS]
     ignored += [f'Branch "{b["name"].strip()}": "{k}"' for b in items for k in b if k not in BRANCH_KEYS]
+    points = [{"before": " ".join(p["before"].split()),
+               **({"where": {k.strip(): v.strip() for k, v in p["where"].items()}} if "where" in p else {}),
+               "skills": [s.strip() for s in p["skills"]]} for p in data.get("checkpoints", [])]
+    ignored += [f'Checkpoint "{" ".join(p["before"].split())}": "{k}"'
+                for p in data.get("checkpoints", []) for k in p if k not in CHECKPOINT_KEYS]
     group = data.get("group")
     return dict(info, state="ok", group=group.strip() if isinstance(group, str) else "", ignored=ignored,
+                checkpoints=points,
                 branches=[{"name": b["name"].strip(), "description": b["description"].strip(),
                            "skills": [s.strip() for s in b["skills"]]} for b in items])
 
@@ -265,6 +298,12 @@ def load(path):
         logger.warning("skill-branches: branch file is invalid and was ignored (%s)", info["error"])
         return None
     return info["branches"] if info["state"] == "ok" else None
+
+
+# Read on every tool call: no warning here; load() already reports an invalid file once per turn.
+def load_checkpoints(path):
+    info = inspect(path)
+    return info["checkpoints"] if info["state"] == "ok" else []
 
 
 def render_section(branch_list):

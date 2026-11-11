@@ -11,7 +11,14 @@ on every turn, to name the area of the request first did.
   name, one-line description, skill names.
 - **Every turn:** adds one sentence asking the model to name the branch the message belongs to (or
   `none`) before its first tool call, then load with `skill_view` the skills of that branch that apply.
-- It never loads a skill itself; the model picks within the branch.
+- **Before a named call (optional):** a checkpoint in the branch file names a tool or a command and
+  the skills that should be loaded before it. When the model makes that call without having asked
+  for those skills in the session, the plugin stops the call once and answers it with "load these
+  skills, then repeat the call". Checkpoints apply on every branch and on `none`: they cover a step
+  the model takes in the middle of other work (sending a subagent, a commit), long after the
+  per-turn sentence.
+- It never loads a skill itself; the model picks within the branch, and loads a checkpoint's skills
+  itself.
 - **Desktop page:** a "Skill branches" row in the app's sidebar opens a view of the branches
   and their skills, every other installed skill as a seed grouped by folder (a plugin's skills in a
   folder named after the plugin), a tile map of all of them, and search over names and descriptions. It warns when the branch file is invalid (routing
@@ -46,6 +53,33 @@ format, for reading or hand-editing:
 ]}
 ```
 
+Checkpoints are an optional second list in the same file:
+
+```json
+{"branches": [],
+ "checkpoints": [
+  {"before": "example_tool", "skills": ["example-briefing-rules"]},
+  {"before": "vcs save", "skills": ["example-message-rules"]},
+  {"before": "write_file", "where": {"path": "*.md"}, "skills": ["example-writing-rules"]}
+]}
+```
+
+- `before` is a tool's exact name, or the words of a command. Command words must appear in that
+  order inside one simple command of a call's `command` argument (`vcs -C repo save` matches
+  `vcs save`; `vcs log | grep save` does not). The match is on words, not on meaning: a command
+  that only mentions the words (`vcs log --grep save`) also matches, and costs one skill load.
+- `where` (optional) narrows a checkpoint to calls whose named arguments match a pattern (`*`
+  wildcard, letter case ignored).
+- A checkpoint stops a call at most once per session, also when the skill is never loaded, so a
+  wrong skill name cannot cause a loop. A skill counts as loaded once the model has called
+  `skill_view` for it in that session.
+- What was asked is kept in memory, per process: after Hermes restarts, a checkpoint may ask once
+  more in a session that continues.
+- An invalid `checkpoints` list makes the whole file invalid (routing is off until it is fixed).
+- An error inside the plugin never stops a call: the call runs and one warning is logged.
+- The desktop page lists the checkpoints and marks skills that are not installed; they are edited in
+  the file.
+
 - Missing file: the plugin adds nothing. Invalid file: adds nothing and logs one warning.
 - One level only: a branch holds skill names, not other branches. A `branches` list in place of
   `skills` makes the file invalid; one beside `skills` is ignored. The desktop page shows both.
@@ -60,6 +94,11 @@ format, for reading or hand-editing:
 ## Limits
 
 - The model can still ignore the instruction; the rate is what the measurement below reports.
+- A checkpoint only sees what a tool call shows: a tool name, a command text, argument values. A
+  step with no recognisable call (deciding how to review, writing prose into a chat answer) cannot
+  have one.
+- A stopped call costs one extra model step, and the model may answer a stopped call by doing the
+  work another way; the measurement below reports what it did.
 - Per-turn cost: the directive is about 250 characters, injected into every user turn, uncached.
 - The app's skill list has no plugin skills (`plugin:skill` names), so the page asks Hermes' plugin
   manager for them (`list_plugin_skill_metadata`, the source the chat's skill index uses). That is
@@ -83,3 +122,25 @@ should not.
 
 Short sessions with no skill load used about 2,200 more input tokens with the plugin (129,172 →
 131,338 for the same two-call request). Multi-turn sessions were not measured.
+
+### Checkpoints
+
+Six multi-turn sessions, Claude Sonnet 5.5, 2026-11-12, memory and user rules off. Three built a small
+app, put it in a private repository, sent subagents, opened a pull request and an issue; three
+researched a tool, wrote a report file and asked a second model. Seven checkpoints: subagent tool,
+commit, push, repository creation, pull request, issue, and writing a `.md` file. The branch
+descriptions named no step and no skill.
+
+| Watched call | Calls | Ran with the skills loaded | Stopped once | Ran without them |
+|---|---|---|---|---|
+| Subagent tool | 21 | 15 | 6 | 0 |
+| Commit | 14 | 11 | 3 | 0 |
+| Repository creation | 6 | 3 | 3 | 0 |
+| Push, pull request, issue | 8 | 8 | 0 | 0 |
+| Writing a `.md` file | 19 | 15 | 4 | 0 |
+
+Every stopped call was followed by the skill load and the same call again. Push, pull request and
+issue were never stopped because an earlier checkpoint had already loaded their skills, so their
+own stop was not measured. Without checkpoints and without a step sentence in the description, the
+same app conversation loaded the commit and push skills in 0 of 3 sessions. Not measured: whether
+the text written after the load follows the skill, other models, sessions with memory on.

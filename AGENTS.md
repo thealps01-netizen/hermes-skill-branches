@@ -1,8 +1,10 @@
 # AGENTS.md — skill-branches
 
 Native Hermes plugin with a desktop page that edits the branch file. `__init__.py` registers one cache-safe system-prompt section
-(`skill-branches.tree`, the branch list, rendered once per new session) and one `pre_llm_call` hook (a
-one-sentence directive on every turn). `branches.py` loads and validates the branch file and renders
+(`skill-branches.tree`, the branch list, rendered once per new session), one `pre_llm_call` hook (a
+one-sentence directive on every turn) and one `pre_tool_call` hook (checkpoints). `checkpoints.py`
+decides whether a tool call matches a checkpoint and keeps, per session, the skills the model asked
+for and the checkpoints that already stopped a call. `branches.py` loads and validates the branch file and renders
 both texts; `inspect()` is the one validation, shared by the hook and the page. `dashboard/plugin_api.py`
 serves `GET /tree` (that inspection, plus the enabled plugin skills from Hermes' plugin manager) and
 `POST /change` (one edit, through `branches.change()`) to `desktop/plugin.js`, the page; the other
@@ -29,6 +31,11 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
 
 ## Rules
 - A chat turn must never fail or wait because of this plugin: every failure returns no text.
+- A checkpoint is the one exception to "never wait", and only by the owner's file: it answers a
+  matching tool call once per session instead of running it. Without a `checkpoints` list no call
+  is ever stopped. An error in the hook lets the call run (one warning), never stops it.
+- `checkpoints.py` holds no tool, command or skill name of its own except `skill_view`, the tool
+  that loads a skill; what to match comes from the file.
 - A swallowed failure leaves exactly one `logger.warning` line starting with `skill-branches: `,
   naming the reason and the exception class only; never `str(exc)` or file content.
 - The plugin never loads a skill itself and never forces a whole branch into context; it only asks the
@@ -53,8 +60,8 @@ hermes plugins doctor "$(cygpath -m "$PWD")"
 - Page styling uses only the app's `--ui-*` tokens and font; one colour per branch, on shapes only;
   no text under 12px; one animation, off under `prefers-reduced-motion`. `render_check.mjs` locks these.
 - The setup skill carries only general, measured lessons; never the author's branches or skill names.
-- A change to the directive or section wording is re-measured with the routing test (README →
-  Measurement) before release.
+- A change to the directive, the section wording or the text that answers a stopped call is
+  re-measured (README → Measurement) before release.
 
 ## Ship
 Push `main` to `github.com/thealps01-netizen/hermes-skill-branches` (owner's yes first), then install
