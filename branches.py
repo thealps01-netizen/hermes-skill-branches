@@ -119,7 +119,7 @@ def inspect(path):
                            "skills": [s.strip() for s in b["skills"]]} for b in items])
 
 
-# Panel edits. One change per call, refused when the file differs from the copy the page showed
+# Panel edits, to a branch or to a step (a checkpoint). One change per call, refused when the file differs from the copy the page showed
 # (`rev`), validated with the same rules as load(), backed up before the write, written atomically.
 BACKUPS = 10
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
@@ -132,6 +132,11 @@ LONG_DESCRIPTION = "Keep the text under 300 characters."
 NO_SKILLS = "Pick at least one skill."
 BAD_SKILL = "Each skill appears once, as a one-line name."
 WRITE_FAILED = "The branch file could not be written. Nothing was changed."
+NO_STEP = "That step is no longer in the file."
+BAD_ACTION = "Name the action: a tool name, or the words of one command without | ; or & (up to 100 characters)."
+BAD_CONDITION = "A condition needs an argument name and a pattern."
+STEP_NEEDS_SKILL = "A step needs at least one skill. Delete the step instead."
+BAD_STEP_LIST = 'The "checkpoints" entry in the branch file is not a list. Fix it in the file first.'
 REPLACE_TRIES = 5
 _lock = threading.Lock()
 
@@ -170,8 +175,91 @@ def _description(value, old=None):
     return text, None
 
 
+def _line(value, limit):
+    return isinstance(value, str) and bool(value.strip()) and len(value) <= limit and not any(ord(c) < 32 for c in value)
+
+
+def _skills(value):
+    if not isinstance(value, list) or not value:
+        return None, NO_SKILLS
+    names = [_skill(s) for s in value]
+    if None in names or len(set(names)) != len(names):
+        return None, BAD_SKILL
+    return names, None
+
+
+# The action and condition of a step as the file will hold them. Returns (before, where, problem);
+# `where` is None for a step without a condition.
+def _step_shape(rows, before, where, keep=None):
+    if not _line(before, 100):
+        return None, None, BAD_ACTION
+    before = " ".join(before.split())
+    if where is not None:
+        if not (isinstance(where, dict) and where and all(_line(k, 200) and _line(v, 200) for k, v in where.items())):
+            return None, None, BAD_CONDITION
+        where = {k.strip(): v.strip() for k, v in where.items()}
+    if _checkpoint_problem({"before": before, "skills": ["-"]}):
+        return None, None, BAD_ACTION
+    for row in rows:
+        if row is not keep and " ".join(row["before"].split()) == before \
+                and ({k.strip(): v.strip() for k, v in row["where"].items()} if "where" in row else None) == where:
+            return None, None, f'There is already a step before "{before}"' + (" with that condition." if where else ".")
+    return before, where, None
+
+
+# Steps are the valid rows of "checkpoints", counted as the page counts them: `step` is a place in
+# that list. The revision check in change() makes the page's count and this one the same.
+def _apply_step(data, req):
+    op, rows = req.get("op"), data.get("checkpoints", [])
+    if not isinstance(rows, list):
+        return BAD_STEP_LIST
+    valid = [r for r in rows if not _checkpoint_problem(r)]
+    if op == "step-create":
+        before, where, problem = _step_shape(valid, req.get("before"), req.get("where"))
+        if problem:
+            return problem
+        names, problem = _skills(req.get("skills"))
+        if problem:
+            return problem
+        data["checkpoints"] = rows + [{"before": before, **({"where": where} if where else {}), "skills": names}]
+        return None
+    at = req.get("step")
+    if type(at) is not int or not 0 <= at < len(valid):
+        return NO_STEP
+    row = valid[at]
+    name = " ".join(row["before"].split())
+    if op == "step-delete":
+        rows[:] = [r for r in rows if r is not row]
+    elif op == "step-edit":
+        old = row.get("where")
+        before, where, problem = _step_shape(valid, req.get("before"), req["where"] if "where" in req else old, keep=row)
+        if problem:
+            return problem
+        rest = {k: v for k, v in row.items() if k not in CHECKPOINT_KEYS}
+        skills = row["skills"]
+        row.clear()
+        row.update({"before": before, **({"where": where} if where else {}), "skills": skills, **rest})
+    elif op in ("step-add", "step-remove"):
+        skill = _skill(req.get("skill"))
+        if not skill:
+            return BAD_SKILL
+        current = [s.strip() for s in row["skills"]]
+        if op == "step-add" and skill in current:
+            return f"{skill} is already asked for before {name}."
+        if op == "step-remove" and skill not in current:
+            return f"{skill} is not asked for before {name}."
+        if op == "step-remove" and len(current) == 1:
+            return STEP_NEEDS_SKILL
+        row["skills"] = current + [skill] if op == "step-add" else [s for s in current if s != skill]
+    else:
+        return UNKNOWN
+    return None
+
+
 def _apply(data, req):
     items, op = data["branches"], req.get("op")
+    if isinstance(op, str) and op.startswith("step-"):
+        return _apply_step(data, req)
     if op == "create":
         problem = _name_problem(items, req.get("name"))
         if problem:
@@ -179,12 +267,9 @@ def _apply(data, req):
         desc, problem = _description(req.get("description"))
         if problem:
             return problem
-        skills = req.get("skills")
-        if not isinstance(skills, list) or not skills:
-            return NO_SKILLS
-        names = [_skill(s) for s in skills]
-        if None in names or len(set(names)) != len(names):
-            return BAD_SKILL
+        names, problem = _skills(req.get("skills"))
+        if problem:
+            return problem
         items.append({"name": req["name"].strip(), "description": desc, "skills": names})
         return None
     if op not in ("add", "remove", "edit", "delete"):

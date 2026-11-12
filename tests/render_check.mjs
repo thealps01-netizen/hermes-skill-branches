@@ -23,7 +23,10 @@
  *      popover. Cancel, Escape and a click outside write nothing. No chat is opened for an edit.
  *   7. What the page touches: GET /tree and POST /change only; the old "seen" key is removed and
  *      nothing else is stored; no skill or toolset is toggled.
- *   8. Errors: a failed /tree or skill list is one alert naming the error.
+ *   8. Errors: a failed /tree or skill list is one alert naming the error. Steps (the file's
+ *      "checkpoints"): a second trunk between branches and seeds, one row per step, counted apart
+ *      from seeds on the map, searched and walked like branches; Remove, Add, New step, Edit and
+ *      Delete post step-* changes that name the step by its place.
  *   9. Copy and theme: no raw i18n key on screen or in labels; every var(--x) in the plugin is
  *      defined by the app's stylesheet (negative control included); no literal colour; no font
  *      under 12px; motion is off under prefers-reduced-motion. React logs no warning.
@@ -486,23 +489,139 @@ el = await mountPage(tree(), baseSkills(), { skillsFail: 'offline' })
 check(text($(el, '[role=alert]')) === 'Could not list your skills: offline.', 'skill-list failure named')
 await unmountAll()
 
-// 8b. checkpoints: a read-only list from the branch file
+// 8b. steps: the "checkpoints" of the branch file, drawn as a second trunk of the tree and edited like branches
+const STEPS = [{ before: 'send_helper', skills: ['skill-a'] }, { before: 'save text', where: { path: '*.md' }, skills: ['seed-1', 'skill-gone', 'seed-x'] }]
+const stepTree = (over = {}) => tree({ checkpoints: STEPS, ...over })
+const stepRows = () => $$(el, '.skb-steps .skb-br')
 el = await mountPage(tree(), baseSkills())
-check(!$(el, '.skb-cp'), 'no checkpoint list when the file has none')
+check(!!$(el, '.skb-steps') && stepRows().length === 0 && text($(el, '.skb-steps .skb-nbb')) === 'New step', 'with no steps the trunk offers New step')
+check(text($(el, '.skb-fh')).includes('3 on branches · 14 seeds'), 'with no steps the map header counts branches and seeds only')
 await unmountAll()
-el = await mountPage(tree({ checkpoints: [{ before: 'send_helper', skills: ['skill-a'] }, { before: 'save_text', where: { path: '*.md' }, skills: ['skill-b', 'skill-gone'] }] }), baseSkills())
-const cpRows = $$(el, '.skb-cp li')
-check(text($(el, '.skb-cp h3')) === 'Checkpoints' && cpRows.length === 2, `checkpoint list with one row per checkpoint (${cpRows.length})`)
-check(text($(cpRows[0], 'code')) === 'send_helper' && text($(cpRows[0], '.skb-cps')) === 'skill-a', 'checkpoint row names the call and its skill')
-check(text($(cpRows[1], '.skb-cpb')) === 'Before save_text (path: *.md)', `checkpoint row shows its argument pattern (${text($(cpRows[1], '.skb-cpb'))})`)
-check($$(cpRows[1], '.skb-cps b.skb-miss').map(text).join() === 'skill-gone (not installed)', 'checkpoint skill that is not installed is marked in words')
-check(!$(el, '.skb-cp button') && !$(el, '.skb-cp input'), 'checkpoint list is read-only')
-check(!$(el, '.skb-cpx'), 'no checkpoint notice when every checkpoint is valid')
+el = await mountPage(tree({ state: 'invalid', problem: 'x', branches: [], checkpoints: [] }), baseSkills())
+check(!$(el, '.skb-steps'), 'an invalid file draws no step trunk')
+await unmountAll()
+el = await mountPage(stepTree(), baseSkills())
+check(!$(el, '.skb-cp'), 'the old read-only list is gone')
+const trunk = $(el, '.skb-steps')
+check(!!(trunk.compareDocumentPosition($(el, '.skb-seeds')) & 4) && !!($(el, '.skb-bs').compareDocumentPosition(trunk) & 4), 'the step trunk sits between the branches and the seeds')
+check(text($(trunk, '.skb-turn b')) === 'Step' && text($(trunk, '.skb-turn span')) === 'one action the assistant takes' && text($(trunk, '.skb-turn em')) === '2', `the trunk is headed Step with its count (${text($(trunk, '.skb-turn'))})`)
+check(stepRows().length === 2 && stepRows().map(r => text($(r, '.skb-n'))).join('|') === 'send_helper|save text', 'one row per step, named by its action')
+check(text($(stepRows()[0], '.skb-d')) === 'skill-a' && text($(stepRows()[1], '.skb-d')) === 'Only when path matches *.md · seed-1, skill-gone, seed-x', `a closed row lists its skills, after its condition (${text($(stepRows()[1], '.skb-d'))})`)
+check(stepRows().every(r => $(r, '.skb-tog').getAttribute('aria-expanded') === 'false' && $(r, '.skb-sk').hidden), 'steps start closed')
+check(text($(stepRows()[1], '.skb-tog em')) === '3', 'a step row counts its skills')
+await click($(stepRows()[1], '.skb-tog'))
+const stepLis = () => $$(stepRows()[1], '.skb-sk li:not(.skb-addrow)')
+check(stepLis().map(li => text($(li, 'b'))).join(',') === 'seed-1,skill-gone,seed-x' && text($(stepLis()[0], 'span')) === 'Does seed-1 things.', 'an open step lists its skills with their descriptions')
+check(stepLis()[1].classList.contains('skb-miss') && text($(stepLis()[1], 'span')) === 'Not installed, or turned off on this profile.', 'a step skill that is not installed is marked like one on a branch')
+check($(stepRows()[1], '.skb-sk').getAttribute('aria-label') === 'Skills asked for before save text', 'the list is named after its step')
+// counts: a skill at a step is not a seed
+check(text($(el, '.skb-fh')).includes('17 skills') && text($(el, '.skb-fh')).includes('3 on branches · 2 at a step · 12 seeds'), `the map header counts skills at a step apart from seeds (${text($(el, '.skb-fh'))})`)
+check(text($(el, '.skb-seeds .skb-turn em')) === '12' && text($(el, '.skb-seeds .skb-turn span')) === 'not on a branch or a step', 'the seed count leaves out skills at a step')
+await click($(el, '.skb-more'))
+check(!$$(el, '.skb-fold li b').map(text).some(n => n === 'seed-1' || n === 'seed-x'), 'a skill at a step is not listed among the seeds')
+const stepPlot = $(el, '.skb-stepp')
+check(!!stepPlot && $$(stepPlot, '.skb-tiles i').map(i => i.title).join(',') === 'seed-1,seed-x' && stepPlot.getAttribute('aria-label') === 'Skills at a step and on no branch: 2 skills; go to the steps', `the map has one plot for skills at a step and on no branch (${stepPlot?.getAttribute('aria-label')})`)
+check($$(el, '.skb-tiles i').length === 18, `every skill is still one tile, plus the one not installed (${$$(el, '.skb-tiles i').length})`)
+await click(stepPlot)
+await settle()
+check(document.activeElement === $(stepRows()[0], '.skb-tog'), 'the plot moves focus to the first step')
+check($$(el, '.skb-gl > div').map(d => text($(d, 'b'))).join(',') === 'Turn,Branch,Step,Seeds', 'the key explains Step')
+check(text($(el, '.skb-head p')).includes('A step asks for its skills right before an action'), 'the page lead explains steps')
+// search
+await typeInto($(el, '.skb-find input'), 'send_help')
+check(stepRows().length === 1 && $(stepRows()[0], '.skb-tog').getAttribute('aria-expanded') === 'true' && !!$(stepRows()[0], '.skb-n mark'), 'search by action shows that step open, the match marked')
+check($$(el, '.skb-steps .skb-addrow, .skb-steps .skb-nbb').length === 0, 'while searching, the step Add rows and New step step aside')
+await typeInto($(el, '.skb-find input'), 'seed-x')
+check(stepRows().length === 1 && text($(stepRows()[0], '.skb-n')) === 'save text' && $$(stepRows()[0], '.skb-sk li b').map(text).join() === 'seed-x', 'search by skill shows the step that asks for it')
+await key($(el, '.skb-find input'), 'Escape')
+// keyboard: one list of toggles
+const allTogs = $$(el, '.skb-tog')
+const firstStep = $(stepRows()[0], '.skb-tog')
+allTogs[allTogs.indexOf(firstStep) - 1].focus()
+await key(document.activeElement, 'ArrowDown')
+check(document.activeElement === firstStep, 'ArrowDown walks from the last branch into the steps')
+
+// 8c. step edits
+changeAnswer = { ok: true, problem: null }
+await click($(stepRows()[1], '.skb-tog'))
+let srm = $(stepLis()[0], 'button.skb-rm')
+check(srm.title === 'Remove from this step' && srm.getAttribute('aria-label') === 'Stop asking for seed-1 before save text', 'each step skill has a Remove icon button naming the skill and the step')
+await click(srm)
+pop = pops(el)[0]
+check(pop.getAttribute('aria-label') === 'Stop asking for seed-1 before save text?' && $$(pop, '.skb-pv li.skb-out b').map(text).join() === 'seed-1' && $$(pop, '.skb-pv li').length === 3, 'Remove previews the step with the leaving skill marked')
+stub.calls.notify.length = 0
+await click(btnText(el, 'Remove'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-remove', step: 1, skill: 'seed-1', rev: 'r1' }), `Remove posts the step by its place (${JSON.stringify(lastChange())})`)
+check(stub.calls.notify.at(-1)?.message === 'Saved. It applies from the next action on.', 'the notice says when a step change applies')
+await click($(stepRows()[0], '.skb-tog'))
+await click($($(stepRows()[0], '.skb-sk li'), 'button.skb-rm'))
+pop = pops(el)[0]
+check(text($(pop, '.skb-note')) === 'It is the only skill here, so the step goes with it.' && !!btnText(el, 'Delete step'), 'removing the only skill of a step says the step goes too')
+await click(btnText(el, 'Delete step'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-delete', step: 0, rev: 'r1' }), 'removing the only skill deletes the step')
+const stepAdd = $(stepRows()[1], '.skb-addrow button')
+check(text(stepAdd) === 'Add a skill before save text', 'an open step ends with an Add row')
+await click(stepAdd)
+pop = pops(el)[0]
+check(pop.getAttribute('aria-label') === 'Add a skill before save text' && !optNames().includes('seed-x') && optNames().includes('skill-a') && optNames().includes('seed-0'), 'Add offers every skill the step does not have')
+await typeInto($(pop, 'input[type=search]'), 'seed-0')
+await click($(pops(el)[0], '.skb-opt input'))
+check($$(pops(el)[0], '.skb-pv li.skb-in b').map(text).join() === 'seed-0', 'the picked skill is previewed joining the step')
+await click($(pops(el)[0], '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-add', step: 1, skill: 'seed-0', rev: 'r1' }), 'Add posts the skill for that step')
+// new step
+await click($(el, '.skb-steps .skb-nbb'))
+pop = pops(el)[0]
+const stepInputs = () => $$(pops(el)[0], 'input[type=text]')
+check(pop.getAttribute('aria-label') === 'New step' && stepInputs().length === 3 && stepInputs().every(i => i.getAttribute('aria-label') || i.closest('label')), 'New step asks for an action and an optional condition, each field named')
+await typeInto(stepInputs()[0], 'make a|b now')
+check(stepInputs()[0].getAttribute('aria-invalid') === 'true' && text($(pop, '.skb-fl small')) === 'The words of a command cannot hold | ; or &.', 'a command word with a separator is flagged as typed')
+await typeInto(stepInputs()[0], 'send_helper')
+check(text($(pop, '.skb-fl small')) === 'There is already a step before send_helper.', 'an action another step has is flagged')
+await typeInto(stepInputs()[0], '  ship   it ')
+await pickOpt('seed-2')
+check(!$(pop, '.skb-go').disabled && text($(pop, '.skb-pvh')).startsWith('ship it'), 'action and a skill given: Create step is on, the step previewed')
+await typeInto(stepInputs()[1], 'path')
+check($(pop, '.skb-go').disabled && stepInputs()[2].getAttribute('aria-invalid') === 'true', 'half a condition cannot be saved')
+await typeInto(stepInputs()[2], '*.txt')
+await click($(pop, '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-create', before: 'ship it', where: { path: '*.txt' }, skills: ['seed-2'], rev: 'r1' }), `Create step posts the new step (${JSON.stringify(lastChange())})`)
+await click($(el, '.skb-steps .skb-nbb'))
+await typeInto(stepInputs()[0], 'ship_it')
+await pickOpt('seed-2')
+await click($(pops(el)[0], '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-create', before: 'ship_it', skills: ['seed-2'], rev: 'r1' }), 'a step without a condition posts none')
+// edit and delete
+const sed = $(stepRows()[1], 'button.skb-ed')
+check(sed.title === 'Edit or delete this step' && sed.getAttribute('aria-label') === 'Edit the step before save text', 'each step head has an Edit icon button')
+await click(sed)
+pop = pops(el)[0]
+check(stepInputs().map(i => i.value).join('|') === 'save text|path|*.md' && $(pop, '.skb-go').disabled, 'Edit starts from the current action and condition; nothing to save yet')
+await typeInto(stepInputs()[2], '')
+await typeInto(stepInputs()[1], '')
+await click($(pop, '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-edit', step: 1, before: 'save text', where: null, rev: 'r1' }), `emptying the condition posts it as removed (${JSON.stringify(lastChange())})`)
+await click(sed)
+const before8c = changeCalls.length
+await click(btnText(el, 'Delete step'))
+pop = pops(el)[0]
+check(pop.getAttribute('aria-label') === 'Delete the step before save text?' && text($(pop, 'p')) === 'Its skills stay installed. Those on no branch and no other step become seeds.' && changeCalls.length === before8c, 'Delete asks again and names what happens')
+await click(btnText(el, 'Delete'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-delete', step: 1, rev: 'r1' }), 'the second Delete posts it')
+check($$(el, 'button button').length === 0, 'no button inside another button (steps)')
+await unmountAll()
+// a step with several conditions keeps them: the page edits only its action
+el = await mountPage(tree({ checkpoints: [{ before: 'save_text', where: { path: '*.md', mode: 'w*' }, skills: ['skill-a'] }] }), baseSkills())
+check(text($(stepRows()[0], '.skb-d')).startsWith('Only when path matches *.md and mode matches w* · '), 'several conditions are all shown')
+await click($(stepRows()[0], 'button.skb-ed'))
+check($$(pops(el)[0], 'input[type=text]').length === 1 && text($(pops(el)[0], '.skb-hint')) === 'This step has several conditions. They are kept; change them in the branch file.', 'several conditions are not editable here and the popover says so')
+await typeInto($(pops(el)[0], 'input[type=text]'), 'save_note')
+await click($(pops(el)[0], '.skb-go'))
+check(JSON.stringify(lastChange()) === JSON.stringify({ op: 'step-edit', step: 0, before: 'save_note', rev: 'r1' }), 'the edit then leaves the conditions out of the request')
 await unmountAll()
 el = await mountPage(tree({ checkpoints: [], checkpoint_problems: ['Checkpoint 1 ("x"): "skills" must be a non-empty list of skill names.'] }), baseSkills())
-check($(el, '.skb-cp') && $$(el, '.skb-cp li').length === 0, 'checkpoint section shows when only left-out checkpoints exist')
-check(text($(el, '.skb-cpx')).startsWith('Left out of the file') && text($(el, '.skb-cpx')).includes('Checkpoint 1 ("x")'), `left-out checkpoints are named (${text($(el, '.skb-cpx'))})`)
-check($(el, '.skb-cpx').getAttribute('role') === 'status', 'left-out notice is announced')
+const left = $$(el, '.skb-banner.skb-warn').find(b => text(b).includes('Some steps are left out'))
+check(!!left && text(left).includes('Checkpoint 1 ("x")') && left.getAttribute('role') === 'status', 'steps the file holds but cannot use are named in a notice')
 await unmountAll()
 
 // 9. copy and theme

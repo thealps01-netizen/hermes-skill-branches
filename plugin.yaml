@@ -1,6 +1,6 @@
 name: skill-branches
 label: Skill Branches
-version: 0.6.1
+version: 0.7.0
 description: >-
   Routes each user turn to a branch of skills. Reads a branch file (name, one-line description,
   skill names) from the plugin's data folder, lists the branches once per session in the system
@@ -9,8 +9,8 @@ description: >-
   file answer a named tool call or command once per session with a request to load the skills listed
   for it, when the model has not loaded them yet. It never loads skills itself. A missing or invalid
   file adds nothing and logs one warning when invalid. A desktop page (Skill branches) shows and
-  edits the branches, lists the checkpoints and every installed skill, and says whether the file is
-  valid.
+  edits the branches and the checkpoints (shown as steps), lists every installed skill, and says
+  whether the file is valid.
 author: Muhammed Enes Alpler
 kind: standalone
 requires_hermes: ">=0.22.2"

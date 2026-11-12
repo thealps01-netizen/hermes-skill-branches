@@ -116,6 +116,12 @@ class ApiTests(unittest.TestCase):
         self.assertFalse(again.json()["ok"])
         self.assertIn("changed since this page loaded", again.json()["problem"])
 
+    def test_change_edits_a_checkpoint_through_the_same_route(self):
+        self.file.write_text(json.dumps(dict(TREE, checkpoints=[{"before": "send_helper", "skills": ["brief-rules"]}])), encoding="utf-8")
+        got = self.client.post(f"{PREFIX}/change", json={"op": "step-add", "step": 0, "skill": "skill-z", "rev": self.get()["rev"]})
+        self.assertEqual(got.json(), {"ok": True, "problem": None})
+        self.assertEqual(self.get()["checkpoints"], [{"before": "send_helper", "skills": ["brief-rules", "skill-z"]}])
+
     def test_change_failure_is_a_refusal_with_one_warning(self):
         with mock.patch.object(api, "_branches", side_effect=RuntimeError("secret detail")), \
                 mock.patch.object(api.logger, "warning") as warn:

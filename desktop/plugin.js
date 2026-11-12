@@ -14,7 +14,7 @@ const en = {
   skb: {
     nav: 'Skill branches',
     title: 'Skill branches',
-    lead: 'Each message picks one branch and loads the skills on it that fit. Skills on no branch are seeds; they still load by their own description.',
+    lead: 'Each message picks one branch and loads the skills on it that fit. A step asks for its skills right before an action such as a commit. Skills on neither are seeds; they still load by their own description.',
     loading: 'Reading the branch file and your skills…',
     treeFailed: detail => `Could not read the branch file: ${detail}. If you just installed this version, restart Hermes.`,
     skillsFailed: detail => `Could not list your skills: ${detail}.`,
@@ -30,14 +30,50 @@ const en = {
     branch: 'Branch',
     turnHint: 'one message you send',
     seeds: 'Seeds',
-    seedsHint: 'not on a branch',
+    seedsHint: 'not on a branch or a step',
     skillsOn: name => `Skills on ${name}`,
     notInstalled: 'Not installed, or turned off on this profile.',
-    cpTitle: 'Checkpoints',
-    cpLead: 'Before one of these calls runs, the assistant is asked once per chat to load the skills beside it. They apply on every branch and are edited in the branch file.',
-    cpBefore: 'Before',
-    cpMissing: 'not installed',
-    cpLeftOut: 'Left out of the file because they are not valid:',
+    step: 'Step',
+    stepHint: 'one action the assistant takes',
+    stepSkills: before => `Skills asked for before ${before}`,
+    stepWhen: (arg, pattern) => `${arg} matches ${pattern}`,
+    stepOnly: list => `Only when ${list}`,
+    stepAnd: ' and ',
+    stepAddTo: before => `Add a skill before ${before}`,
+    stepRemove: 'Remove from this step',
+    stepRemoveLabel: (skill, before) => `Stop asking for ${skill} before ${before}`,
+    stepEdit: 'Edit or delete this step',
+    stepEditLabel: before => `Edit the step before ${before}`,
+    newStep: 'New step',
+    stepSaved: 'Saved. It applies from the next action on.',
+    stepAfter: before => `Before ${before}, after this`,
+    stepRmTitle: (skill, before) => `Stop asking for ${skill} before ${before}?`,
+    stepRmLast: 'It is the only skill here, so the step goes with it.',
+    stepAddBody: 'It is asked for once per chat, right before this action runs.',
+    stepAddEmpty: q => `No skill off this step matches "${q}".`,
+    stepAddNone: 'Every skill is already at this step.',
+    stepNewBody: 'Right before the action runs, the assistant is asked once per chat to load these skills.',
+    actionLabel: 'Action',
+    actionHint: 'A tool name, such as delegate_task, or the words of a command, such as git commit.',
+    actionBad: 'The words of a command cannot hold | ; or &.',
+    actionLong: 'Keep the action under 100 characters.',
+    actionTaken: before => `There is already a step before ${before}.`,
+    whenLabel: 'Only when (optional)',
+    whenArg: 'Argument name',
+    whenArgHint: 'Argument, such as path',
+    whenPattern: 'Pattern',
+    whenPatternHint: 'Pattern, such as *.md',
+    whenHint: 'Narrows the step to calls with a matching argument. * stands for any text. Leave both empty to ask every time.',
+    whenHalf: 'Fill in both, or leave both empty.',
+    whenMany: 'This step has several conditions. They are kept; change them in the branch file.',
+    stepTreeAfter: 'The step after this',
+    stepCreateGo: 'Create step',
+    stepEditTitle: before => `Edit the step before ${before}`,
+    stepDeleteGo: 'Delete step',
+    stepDelTitle: before => `Delete the step before ${before}?`,
+    stepDelBody: 'Its skills stay installed. Those on no branch and no other step become seeds.',
+    leftOutTitle: 'Some steps are left out',
+    leftOutBody: 'These rows of "checkpoints" in the branch file are not valid, so they do nothing. Correct them in the file:',
     add: 'Add to a branch',
     addLabel: name => `Put ${name} on a branch`,
     addTo: name => `Add a skill to ${name}`,
@@ -108,8 +144,10 @@ const en = {
     hits: (n, total) => `${n} of ${total}`,
     none: q => `No branch, skill name or description contains "${q}".`,
     side: 'Find and map',
-    fieldLabel: 'Every skill as one tile, grouped by branch, then seeds by folder',
-    fieldSplit: (on, seeds) => `${on} on branches · ${seeds} seeds`,
+    fieldLabel: 'Every skill as one tile, grouped by branch, then skills at a step, then seeds by folder',
+    fieldSplit: (on, steps, seeds) => (steps ? `${on} on branches · ${steps} at a step · ${seeds} seeds` : `${on} on branches · ${seeds} seeds`),
+    atStep: 'at a step',
+    plotSteps: n => `Skills at a step and on no branch: ${plural(n, 'skill', 'skills')}; go to the steps`,
     plotBranch: (name, n) => `${name}, ${plural(n, 'skill', 'skills')}; open it`,
     plotFolder: (name, n) => `${name}, ${plural(n, 'seed', 'seeds')}; open the folder`,
     smallFolders: n => plural(n, 'small folder', 'small folders'),
@@ -117,7 +155,8 @@ const en = {
     seedsByFolder: 'Seeds, by folder',
     glossTurn: 'one message you send. It names one branch.',
     glossBranch: 'a named group of skills; the ones that fit the message load.',
-    glossSeed: 'a skill on no branch. It still loads by its own description.'
+    glossStep: 'an action such as a commit or a push. The skills under it are asked for once per chat, right before it runs.',
+    glossSeed: 'a skill on no branch and no step. It still loads by its own description.'
   }
 }
 
@@ -266,17 +305,13 @@ const CSS = `
 .skb-pvh i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--h);align-self:center}
 .skb-pvh span{font-weight:400;font-size:12px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skb-note{margin:8px 0 0;font-size:12px;color:var(--ui-text-secondary)}
-.skb-cp{margin-top:24px;padding-top:16px;border-top:1px solid var(--ui-stroke-tertiary)}
-.skb-cp h3{margin:0 0 2px;font-size:15px;line-height:1.3;font-weight:600}
-.skb-cp p{margin:0 0 10px;font-size:13px;color:var(--ui-text-secondary);max-width:72ch}
-.skb-cp ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.skb-cp li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px}
-.skb-cpb{flex:0 1 280px;color:var(--ui-text-secondary);overflow-wrap:anywhere}
-.skb-cpb code{font:inherit;font-weight:600;color:var(--ui-text-primary)}
-.skb-cps{display:flex;flex-wrap:wrap;gap:2px 14px;min-width:0}
-.skb-cps b{font-weight:500;overflow-wrap:anywhere}
-.skb-cps b.skb-miss{font-weight:400;font-style:italic;color:var(--ui-text-secondary)}
-.skb-cpx{margin:10px 0 0;font-size:13px;color:var(--ui-text-primary)}
+.skb .skb-st{--h:var(--ui-text-tertiary)}
+.skb-steps{margin-top:22px}
+.skb-steps>.skb-turn{margin-bottom:2px}
+.skb-sq{width:11px;height:11px;box-sizing:border-box;flex:none;border-radius:3px;background:var(--ui-text-tertiary)}
+.skb-st .skb-dot,.skb-st .skb-sk b::before,.skb-st.skb-pvh i{border-radius:2px}
+.skb-stepp .skb-tiles i{border-radius:2px}
+.skb-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 .skb-err{margin:10px 0 0;padding:7px 10px;border-radius:8px;border:1px solid color-mix(in srgb,var(--ui-red) 55%,transparent);background:color-mix(in srgb,var(--ui-red) 10%,transparent)}
 .skb-pf{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--ui-stroke-tertiary)}
 .skb-pf small{font-size:12px;color:var(--ui-text-tertiary);margin-right:auto}
@@ -335,9 +370,13 @@ export function buildModel(tree, skills) {
   const installed = new Map(skills.map(s => [s.name, s]))
   const branches = tree.state === 'ok' ? tree.branches : []
   const onBranch = new Set(branches.flatMap(b => b.skills))
+  // A step is a checkpoint of the branch file: skills asked for right before one action.
+  const steps = tree.state === 'ok' && Array.isArray(tree.checkpoints) ? tree.checkpoints : []
+  const stepOnly = [...new Set(steps.flatMap(c => c.skills))].filter(n => installed.has(n) && !onBranch.has(n))
+  const atStep = new Set(stepOnly)
   const byFolder = new Map()
   for (const s of skills) {
-    if (onBranch.has(s.name)) continue
+    if (onBranch.has(s.name) || atStep.has(s.name)) continue
     const cat = s.category || ''
     if (!byFolder.has(cat)) byFolder.set(cat, [])
     byFolder.get(cat).push(s.name)
@@ -345,7 +384,7 @@ export function buildModel(tree, skills) {
   const folders = [...byFolder].map(([cat, names]) => ({ cat, names: names.sort() }))
     .sort((a, b) => b.names.length - a.names.length || a.cat.localeCompare(b.cat))
   const routed = [...onBranch].filter(n => installed.has(n)).length
-  return { installed, branches, onBranch, folders, total: skills.length, routed, seeds: skills.length - routed }
+  return { installed, branches, onBranch, steps, stepOnly, folders, total: skills.length, routed, seeds: skills.length - routed - stepOnly.length }
 }
 
 // At most `size` rows of a list, kept around the marked rows; the rest is counted above and below.
@@ -440,6 +479,8 @@ function Pop({ anchor, label, onClose, children }) {
 }
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
+const stepId = c => JSON.stringify([c.before, c.where || null])
+const oneLine = s => (s || '').trim().replace(/\s+/g, ' ')
 
 function Tree({ ctx, tree, skills, refresh, t }) {
   const uid = useId()
@@ -447,6 +488,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
   const m = buildModel(tree, skills)
   const [open, setOpen] = useState(() => new Set(m.branches.map(b => b.name)))
   const [folds, setFolds] = useState(() => new Set())
+  const [openSteps, setOpenSteps] = useState(() => new Set())
   const [q, setQ] = useState('')
   const [allFolders, setAllFolders] = useState(false)
   const [hov, setHov] = useState(null)
@@ -475,10 +517,18 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     const shown = f.names.filter(match)
     return { ...f, idx, shown, isOpen: ql ? shown.length > 0 : folds.has(f.cat), visible: ql ? shown.length > 0 : allFolders || idx < MAX_FOLDERS }
   })
-  const hits = rows.reduce((n, r) => n + (ql ? r.shown.length : 0), 0) + folderRows.reduce((n, f) => n + (ql ? f.shown.length : 0), 0)
+  const whenText = c => (c.where ? t('skb.stepOnly', Object.entries(c.where).map(([k, v]) => t('skb.stepWhen', k, v)).join(t('skb.stepAnd'))) : '')
+  const stepRows = m.steps.map((c, i) => {
+    const id = stepId(c)
+    const stepHit = !!ql && lower(c.before).includes(ql)
+    const shown = ql ? c.skills.filter(s => stepHit || match(s)) : c.skills
+    return { c, i, id, shown, isOpen: ql ? shown.length > 0 : openSteps.has(id), visible: !ql || shown.length > 0 }
+  })
+  const hits = rows.reduce((n, r) => n + (ql ? r.shown.length : 0), 0) + stepRows.reduce((n, r) => n + (ql ? r.shown.length : 0), 0) + folderRows.reduce((n, f) => n + (ql ? f.shown.length : 0), 0)
   const extra = m.folders.length - MAX_FOLDERS
   const folderName = cat => cat || t('skb.noFolder')
   const nameWidth = `${Math.min(18, Math.max(5, ...m.branches.map(b => b.name.length)) + 1)}ch`
+  const stepWidth = `${Math.min(18, Math.max(5, ...m.steps.map(c => c.before.length)) + 1)}ch`
   const branchesWith = (skill, except) => m.branches.filter(b => b !== except && b.skills.includes(skill)).map(b => b.name)
 
   // ── edits: one popover at a time; the change goes to the plugin's own route, never to a chat ──
@@ -501,7 +551,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     const target = anchor?.isConnected ? anchor : head?.querySelector('.skb-tog')
     target?.focus({ preventScroll: true })
   }, 0)
-  const save = async req => {
+  const save = async (req, focusName, notice = 'skb.saved') => {
     if (busy) return
     setBusy(true)
     upd({ problem: null })
@@ -515,18 +565,19 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     const anchor = popRef.current?.anchor
     if (res?.ok) {
       closePop(false)
-      try { host.notify?.({ kind: 'success', message: t('skb.saved') }) } catch {}
+      try { host.notify?.({ kind: 'success', message: t(notice) }) } catch {}
     } else {
       upd({ problem: res?.problem || t('skb.saveFailed', 'no answer') })
     }
     await refresh()
-    if (res?.ok) refocusAfterSave(anchor, req.name || req.branch)
+    if (res?.ok) refocusAfterSave(anchor, focusName || req.name || req.branch)
   }
 
+  const kc = k => (typeof k === 'number' ? `skb-k${k}` : k)
   const preview = (k, label, names, mark, head) => {
     const marked = Object.keys(mark)
     const w = previewWindow(names, marked)
-    return h('div', { className: `skb-pv skb-k${k}` },
+    return h('div', { className: `skb-pv ${kc(k)}` },
       h('span', { className: 'skb-lbl' }, label), head || null,
       h('ul', { className: 'skb-sk' },
         w.above ? h('li', { key: '-above', className: 'skb-gapl' }, t('skb.above', w.above)) : null,
@@ -539,7 +590,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     h('button', { type: 'button', className: 'skb-btn', onClick: () => closePop(true) }, t('skb.cancel')),
     h('button', { type: 'button', className: `skb-btn ${danger ? 'skb-danger' : 'skb-go'}`, disabled: !ok || busy, onClick: go }, busy ? t('skb.saving') : goLabel))
   const problem = pop?.problem ? h('p', { className: 'skb-err', role: 'alert' }, pop.problem) : null
-  const options = (list, multi, picked, onPick, k) => h('div', { className: `skb-opts skb-k${k}`, role: 'group', 'aria-label': t('skb.pickSkill') },
+  const options = (list, multi, picked, onPick, k) => h('div', { className: `skb-opts ${kc(k)}`, role: 'group', 'aria-label': t('skb.pickSkill') },
     list.map(n => {
       const on = branchesWith(n)
       return h('label', { key: n, className: 'skb-opt' },
@@ -553,7 +604,106 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       .sort((a, b) => (m.onBranch.has(a) - m.onBranch.has(b)) || a.localeCompare(b))
   }
 
+  const saveStep = (req, c) => save(req, c, 'skb.stepSaved')
+  // The action field and, unless the step holds several conditions, one optional condition.
+  const stepFields = (c, hint) => {
+    const many = !!c?.where && Object.keys(c.where).length > 1
+    const [arg0, pat0] = c?.where && !many ? Object.entries(c.where)[0] : ['', '']
+    const before = oneLine(pop.before ?? c?.before)
+    const arg = (pop.arg ?? arg0).trim()
+    const pat = (pop.pat ?? pat0).trim()
+    const where = many ? c.where : arg && pat ? { [arg]: pat } : null
+    const long = before.length > 100
+    const bad = before.includes(' ') && /[|;&]/.test(before)
+    const taken = m.steps.some(x => x !== c && x.before === before && JSON.stringify(x.where || null) === JSON.stringify(where))
+    const half = !many && !arg !== !pat
+    const text = (value, key, label, placeholder, invalid, focus) => h('input', {
+      type: 'text', ...(focus ? { 'data-autofocus': '' } : {}), value, spellCheck: false, autoComplete: 'off', ...(label ? { 'aria-label': label, placeholder } : {}),
+      'aria-invalid': String(invalid), onChange: e => upd({ [key]: e.target.value, problem: null })
+    })
+    const nodes = [
+      h('label', { key: 'a', className: 'skb-fl' }, h('span', { className: 'skb-lbl' }, t('skb.actionLabel')),
+        text(pop.before ?? c?.before ?? '', 'before', null, null, long || bad || taken, true),
+        h('small', { 'aria-live': 'polite' }, bad ? t('skb.actionBad') : long ? t('skb.actionLong') : taken ? t('skb.actionTaken', before) : hint)),
+      many ? h('p', { key: 'w', className: 'skb-hint' }, t('skb.whenMany'))
+        : h('div', { key: 'w', className: 'skb-fl', role: 'group', 'aria-label': t('skb.whenLabel') }, h('span', { className: 'skb-lbl' }, t('skb.whenLabel')),
+          h('div', { className: 'skb-two' },
+            text(pop.arg ?? arg0, 'arg', t('skb.whenArg'), t('skb.whenArgHint'), half && !arg),
+            text(pop.pat ?? pat0, 'pat', t('skb.whenPattern'), t('skb.whenPatternHint'), half && !pat)),
+          h('small', { 'aria-live': 'polite' }, half ? t('skb.whenHalf') : t('skb.whenHint')))
+    ]
+    return { nodes, before, where, many, ok: !!before && !long && !bad && !taken && !half }
+  }
+  const stepPop = () => {
+    const c = pop.step ? m.steps.find(x => stepId(x) === pop.step) : null
+    const at = m.steps.indexOf(c)
+    if (pop.kind === 'srm' && c && c.skills.includes(pop.skill)) {
+      const others = branchesWith(pop.skill)
+      const last = c.skills.length === 1
+      const title = t('skb.stepRmTitle', pop.skill, c.before)
+      return [title, h(Fragment, null,
+        h('h3', null, title),
+        h('p', null, [t('skb.rmBody'), others.length ? t('skb.rmAlso', others.join(', ')) : ''].filter(Boolean).join(' ')),
+        preview('skb-st', t('skb.stepAfter', c.before), c.skills, { [pop.skill]: 'out' }),
+        last ? h('p', { className: 'skb-note' }, t('skb.stepRmLast')) : null,
+        problem,
+        footer(() => saveStep(last ? { op: 'step-delete', step: at } : { op: 'step-remove', step: at, skill: pop.skill }, c.before), last ? t('skb.stepDeleteGo') : t('skb.rmGo'), true, true))]
+    }
+    if (pop.kind === 'sadd' && c) {
+      const query = pop.q || ''
+      const list = findSkills(new Set(c.skills), query)
+      const pool = findSkills(new Set(c.skills), '')
+      const title = t('skb.stepAddTo', c.before)
+      return [title, h(Fragment, null,
+        h('h3', null, title),
+        h('p', null, t('skb.stepAddBody')),
+        h('input', { type: 'search', 'data-autofocus': '', value: query, placeholder: t('skb.addFind'), 'aria-label': t('skb.addFind'), onChange: e => upd({ q: e.target.value }) }),
+        list.length ? options(list, false, pop.sel, n => upd({ sel: n, problem: null }), 'skb-st')
+          : h('div', { className: 'skb-opts' }, h('p', null, pool.length ? t('skb.stepAddEmpty', query.trim()) : t('skb.stepAddNone'))),
+        pop.sel ? preview('skb-st', t('skb.stepAfter', c.before), [...c.skills, pop.sel], { [pop.sel]: 'in' }) : null,
+        problem,
+        footer(() => saveStep({ op: 'step-add', step: at, skill: pop.sel }, c.before), t('skb.addGo'), !!pop.sel))]
+    }
+    if (pop.kind === 'screate') {
+      const f = stepFields(null, t('skb.actionHint'))
+      const picks = pop.picks || []
+      const pick = n => upd({ picks: picks.includes(n) ? picks.filter(x => x !== n) : [...picks, n], problem: null })
+      return [t('skb.newStep'), h(Fragment, null,
+        h('h3', null, t('skb.newStep')),
+        h('p', null, t('skb.stepNewBody')),
+        f.nodes,
+        h('span', { className: 'skb-lbl' }, `${t('skb.skillsLabel')} · ${t('skb.picked', picks.length)}`),
+        h('input', { type: 'search', value: pop.q || '', placeholder: t('skb.addFind'), 'aria-label': t('skb.addFind'), onChange: e => upd({ q: e.target.value }) }),
+        options(findSkills(new Set(), pop.q || ''), true, new Set(picks), pick, 'skb-st'),
+        picks.length ? preview('skb-st', t('skb.stepTreeAfter'), picks, Object.fromEntries(picks.map(n => [n, 'in'])),
+          h('div', { className: 'skb-pvh skb-st' }, h('i', null), f.before || '…', h('span', null, whenText({ where: f.where })))) : null,
+        problem,
+        footer(() => saveStep({ op: 'step-create', before: f.before, ...(f.where ? { where: f.where } : {}), skills: picks }, f.before), t('skb.stepCreateGo'), f.ok && picks.length > 0))]
+    }
+    if (pop.kind === 'sedit' && c) {
+      if (pop.confirm) {
+        const title = t('skb.stepDelTitle', c.before)
+        return [title, h(Fragment, null,
+          h('h3', null, title),
+          h('p', null, t('skb.stepDelBody')),
+          problem,
+          footer(() => saveStep({ op: 'step-delete', step: at }), t('skb.delConfirm'), true, true))]
+      }
+      const f = stepFields(c, t('skb.actionHint'))
+      const changed = f.before !== c.before || JSON.stringify(f.where) !== JSON.stringify(c.where || null)
+      const title = t('skb.stepEditTitle', c.before)
+      return [title, h(Fragment, null,
+        h('h3', null, title),
+        f.nodes,
+        problem,
+        footer(() => saveStep({ op: 'step-edit', step: at, before: f.before, ...(f.many ? {} : { where: f.where }) }, f.before), t('skb.saveGo'), changed && f.ok, false,
+          h('button', { type: 'button', className: 'skb-btn skb-left', onClick: () => upd({ confirm: true, problem: null }) }, t('skb.stepDeleteGo'))))]
+    }
+    return null
+  }
+
   const popBody = () => {
+    if ('step' in pop || pop.kind === 'screate') return stepPop()
     const b = m.branches.find(x => x.name === pop.branch)
     const k = b ? kOf(m.branches.indexOf(b)) : kOf(m.branches.length)
     if (pop.kind === 'remove' && b && b.skills.includes(pop.skill)) {
@@ -645,7 +795,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     }
     return null
   }
-  // A popover whose branch or skill vanished (the file changed elsewhere) closes itself.
+  // A popover whose branch, step or skill vanished (the file changed elsewhere) closes itself.
   const popGot = pop ? popBody() : null
   useEffect(() => { if (pop && !popGot) setPop(null) })
   const popNode = () => (popGot ? h(Pop, { key: pop.key, anchor: pop.anchor, label: popGot[0], onClose: closePop, children: popGot[1] }) : null)
@@ -681,12 +831,12 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     onMouseEnter: () => setHov(name),
     onMouseLeave: () => setHov(null)
   }, h('b', null, jsx(Hl, { text: name, q: ql })), h('span', { title: text }, jsx(Hl, { text, q: ql })), action || null)
-  const addRow = b => {
-    const key = `add:${b.name}`
-    return h('li', { key, className: 'skb-addrow' }, h('button', {
-      type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': String(pop?.key === key), onClick: e => openPop(e, { key, kind: 'add', branch: b.name })
-    }, jsx(ActIcon, { kind: 'add' }), t('skb.addTo', b.name)))
-  }
+  const addRow = (spec, label) => h('li', { key: spec.key, className: 'skb-addrow' }, h('button', {
+    type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': String(pop?.key === spec.key), onClick: e => openPop(e, spec)
+  }, jsx(ActIcon, { kind: 'add' }), label))
+  const newButton = (spec, label) => h('div', { key: 'new', className: 'skb-nb' }, h('button', {
+    type: 'button', className: 'skb-nbb', 'aria-haspopup': 'dialog', 'aria-expanded': String(pop?.key === spec.key), onClick: e => openPop(e, spec)
+  }, jsx(ActIcon, { kind: 'add' }), label))
 
   const branchList = h('div', { className: 'skb-bs', style: { '--nw': nameWidth } }, rows.filter(r => r.visible).map(r => h('div', {
     key: r.b.name, id: `${uid}b${r.i}`, className: `skb-br skb-k${kOf(r.i)}${r.isOpen ? ' skb-open' : ''}`
@@ -701,11 +851,28 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     editable ? rowButton({ key: `edit:${r.b.name}`, kind: 'edit', branch: r.b.name }, 'skb-add skb-ed', t('skb.edit'), t('skb.editLabel', r.b.name), 'edit') : null),
   h('ul', { className: 'skb-sk', id: `${uid}l${r.i}`, 'aria-label': t('skb.skillsOn', r.b.name), hidden: !r.isOpen },
     r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s), removeButton(s, r.b)) : skillRow(s, 'skb-miss', t('skb.notInstalled'), removeButton(s, r.b))),
-    ql || !editable ? null : addRow(r.b)))),
-  !ql && editable ? h('div', { key: 'new', className: 'skb-nb' }, h('button', {
-    type: 'button', className: 'skb-nbb', 'aria-haspopup': 'dialog', 'aria-expanded': String(pop?.key === 'create'),
-    onClick: e => openPop(e, { key: 'create', kind: 'create' })
-  }, jsx(ActIcon, { kind: 'add' }), t('skb.newBranch'))) : null)
+    ql || !editable ? null : addRow({ key: `add:${r.b.name}`, kind: 'add', branch: r.b.name }, t('skb.addTo', r.b.name))))),
+  !ql && editable ? newButton({ key: 'create', kind: 'create' }, t('skb.newBranch')) : null)
+
+  // Steps: the same rows as branches, in one neutral hue with square marks, closed until opened.
+  const stepRemove = (s, r) => (editable ? rowButton({ key: `srm:${r.id}:${s}`, kind: 'srm', step: r.id, skill: s }, 'skb-add skb-rm', t('skb.stepRemove'), t('skb.stepRemoveLabel', s, r.c.before), 'remove') : null)
+  const stepSummary = c => [whenText(c), c.skills.join(', ')].filter(Boolean).join(' · ')
+  const stepList = h('div', { className: 'skb-bs skb-st', style: { '--nw': stepWidth } }, stepRows.filter(r => r.visible).map(r => h('div', {
+    key: r.id, id: `${uid}s${r.i}`, className: `skb-br${r.isOpen ? ' skb-open' : ''}`
+  },
+  h('div', { className: 'skb-bh' },
+    h('button', {
+      type: 'button', className: 'skb-tog', id: `${uid}x${r.i}`, 'aria-expanded': String(r.isOpen), 'aria-controls': `${uid}y${r.i}`,
+      onClick: () => toggle(setOpenSteps, r.id)
+    }, h('i', { className: 'skb-dot' }), h('span', { className: 'skb-n' }, jsx(Hl, { text: r.c.before, q: ql })),
+    h('span', { className: 'skb-d', title: stepSummary(r.c) }, stepSummary(r.c)),
+    h('em', null, String(r.c.skills.length)), h('i', { className: 'skb-chev' })),
+    editable ? rowButton({ key: `sedit:${r.id}`, kind: 'sedit', step: r.id }, 'skb-add skb-ed', t('skb.stepEdit'), t('skb.stepEditLabel', r.c.before), 'edit') : null),
+  h('ul', { className: 'skb-sk', id: `${uid}y${r.i}`, 'aria-label': t('skb.stepSkills', r.c.before), hidden: !r.isOpen },
+    r.shown.map(s => m.installed.has(s) ? skillRow(s, '', desc(s), stepRemove(s, r)) : skillRow(s, 'skb-miss', t('skb.notInstalled'), stepRemove(s, r))),
+    ql || !editable ? null : addRow({ key: `sadd:${r.id}`, kind: 'sadd', step: r.id }, t('skb.stepAddTo', r.c.before))))),
+  !ql && editable ? newButton({ key: 'screate', kind: 'screate' }, t('skb.newStep')) : null)
+  const stepsShown = tree.state !== 'invalid' && (ql ? stepRows.some(r => r.visible) : editable || m.steps.length > 0)
 
   const foldList = h('div', { className: 'skb-fs' }, folderRows.filter(f => f.visible).map(f => h('div', { key: f.cat || '-', className: 'skb-fold' },
     h('button', {
@@ -730,13 +897,17 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     focusLater(`${uid}g${f.idx}`)
   }
   const field = h('div', { className: `skb-field skb-grow${ql ? ' skb-q' : ''}`, role: 'group', 'aria-label': t('skb.fieldLabel') },
-    h('div', { className: 'skb-fh' }, h('b', null, t('skb.count', m.total)), h('span', null, t('skb.fieldSplit', m.routed, m.seeds))),
+    h('div', { className: 'skb-fh' }, h('b', null, t('skb.count', m.total)), h('span', null, t('skb.fieldSplit', m.routed, m.stepOnly.length, m.seeds))),
     h('div', { className: 'skb-plots' },
       m.branches.map((b, i) => h('button', {
         key: b.name, type: 'button', className: `skb-plot skb-brp skb-k${kOf(i)}${rows[i].isOpen ? ' skb-lit' : ''}`,
         'aria-label': t('skb.plotBranch', b.name, b.skills.length),
         onClick: () => { setOpen(prev => new Set(prev).add(b.name)); focusLater(`${uid}t${i}`, `${uid}b${i}`) }
       }, h('span', { className: 'skb-pl' }, b.name), tiles(b.skills, n => (m.installed.has(n) ? '' : 'skb-miss')))),
+      m.stepOnly.length ? h('button', {
+        type: 'button', className: 'skb-plot skb-stepp skb-st', 'aria-label': t('skb.plotSteps', m.stepOnly.length),
+        onClick: () => focusLater(`${uid}x0`, `${uid}s0`)
+      }, h('span', { className: 'skb-pl' }, t('skb.atStep')), tiles(m.stepOnly, () => '')) : null,
       m.folders.length ? h('div', { className: 'skb-fsep' }, t('skb.seedsByFolder')) : null,
       big.map(f => h('button', {
         key: f.cat || '-', type: 'button', className: 'skb-plot skb-seedp', 'aria-label': t('skb.plotFolder', folderName(f.cat), f.names.length),
@@ -748,7 +919,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       }, h('span', { className: 'skb-pl' }, t('skb.smallFolders', small.length)), tiles(small.flatMap(f => f.names), () => '')) : null))
 
   const gloss = h('div', { className: 'skb-gl' },
-    [['skb-root', 'skb.turn', 'skb.glossTurn'], ['skb-gb', 'skb.branch', 'skb.glossBranch'], ['skb-ring', 'skb.seeds', 'skb.glossSeed']]
+    [['skb-root', 'skb.turn', 'skb.glossTurn'], ['skb-gb', 'skb.branch', 'skb.glossBranch'], ['skb-sq', 'skb.step', 'skb.glossStep'], ['skb-ring', 'skb.seeds', 'skb.glossSeed']]
       .map(([cls, title, text]) => h('div', { key: cls }, h('i', { className: cls }),
         h('span', null, h('b', null, t(title)), ` — ${t(text)}`))))
 
@@ -756,6 +927,9 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     h('div', { ref: mainRef, onKeyDown: onTreeKey },
       h('div', { className: 'skb-turn' }, h('i', { className: 'skb-root' }), h('b', null, t('skb.turn')), h('span', null, t('skb.turnHint'))),
       branchList,
+      stepsShown ? h('div', { className: 'skb-steps' },
+        h('div', { className: 'skb-turn' }, h('i', { className: 'skb-sq' }), h('b', null, t('skb.step')), h('span', null, t('skb.stepHint')), m.steps.length ? h('em', null, String(m.steps.length)) : null),
+        stepList) : null,
       h('div', { className: 'skb-seeds' },
         h('div', { className: 'skb-turn' }, h('i', { className: 'skb-ring' }), h('b', null, t('skb.seeds')), h('span', null, t('skb.seedsHint')), h('em', null, String(m.seeds))),
         foldList,
@@ -769,20 +943,6 @@ function Tree({ ctx, tree, skills, refresh, t }) {
         h('input', { type: 'search', value: q, placeholder: t('skb.findPlaceholder'), 'aria-label': t('skb.findLabel'), onChange: e => setQ(e.target.value), onKeyDown: onFindKey }),
         h('output', { 'aria-live': 'polite' }, ql ? t('skb.hits', hits, m.total) : t('skb.count', m.total))),
       field, gloss)), popNode())
-}
-
-// Read-only: checkpoints are few and are edited in the branch file.
-function Checkpoints({ points, problems, skills, t }) {
-  const installed = new Set(skills.map(s => s.name))
-  const where = c => (c.where ? ` (${Object.entries(c.where).map(([k, v]) => `${k}: ${v}`).join(', ')})` : '')
-  return h('section', { className: 'skb-cp', 'aria-label': t('skb.cpTitle') },
-    h('h3', null, t('skb.cpTitle')), h('p', null, t('skb.cpLead')),
-    h('ul', null, points.map((c, i) => h('li', { key: i },
-      h('span', { className: 'skb-cpb' }, t('skb.cpBefore'), ' ', h('code', null, c.before), where(c)),
-      h('span', { className: 'skb-cps' }, c.skills.map(s => (installed.has(s)
-        ? h('b', { key: s }, s)
-        : h('b', { key: s, className: 'skb-miss' }, `${s} (${t('skb.cpMissing')})`))))))),
-    problems.length ? h('div', { className: 'skb-cpx', role: 'status' }, t('skb.cpLeftOut'), ' ', problems.join(' ')) : null)
 }
 
 function createPage(ctx) {
@@ -805,9 +965,8 @@ function createPage(ctx) {
         tree.state === 'invalid' ? jsx(Banner, { tone: 'bad', title: t('skb.invalidTitle'), body: t('skb.invalidBody'), detail: tree.path, items: [tree.problem] }) : null,
         tree.state === 'missing' ? jsx(Banner, { tone: 'info', title: t('skb.missingTitle'), body: t('skb.missingBody'), detail: tree.path, action: jsx(SetupButton, { ctx, t }) }) : null,
         tree.state === 'ok' && tree.ignored?.length ? jsx(Banner, { tone: 'warn', title: t('skb.ignoredTitle'), body: t('skb.ignoredBody'), items: tree.ignored }) : null,
-        jsx(Tree, { ctx, tree, skills, refresh, t }),
-        tree.state === 'ok' && (tree.checkpoints?.length || tree.checkpoint_problems?.length)
-          ? jsx(Checkpoints, { points: tree.checkpoints || [], problems: tree.checkpoint_problems || [], skills, t }) : null)
+        tree.state === 'ok' && tree.checkpoint_problems?.length ? jsx(Banner, { tone: 'warn', title: t('skb.leftOutTitle'), body: t('skb.leftOutBody'), items: tree.checkpoint_problems }) : null,
+        jsx(Tree, { ctx, tree, skills, refresh, t }))
     }
     return h('div', { className: 'skb-page' }, h('style', null, CSS),
       h('section', { className: 'skb' },

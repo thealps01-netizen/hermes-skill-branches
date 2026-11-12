@@ -433,5 +433,125 @@ class ChangeTests(unittest.TestCase):
         self.assertIsNone(branches.inspect(Path(self.tmp.name) / "none.json")["rev"])
 
 
+class StepChangeTests(unittest.TestCase):
+    """The panel's edits to the "checkpoints" list. A step is named by its place among the valid ones."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.file = Path(self.tmp.name) / "branches.json"
+        self.file.write_bytes(
+            b'{\r\n  "branches": [\r\n'
+            b'    {"name": "alpha", "description": "First area.", "skills": ["skill-a"]}\r\n'
+            b'  ],\r\n  "checkpoints": [\r\n'
+            b'    {"before": "send_helper", "skills": ["skill-a"], "note": "kept"},\r\n'
+            b'    {"before": "", "skills": ["skill-x"]},\r\n'
+            b'    {"before": "save_text", "where": {"path": "*.md"}, "skills": ["skill-b", "skill-c"]}\r\n'
+            b'  ]\r\n}')
+
+    def change(self, **req):
+        req.setdefault("rev", branches.inspect(self.file)["rev"])
+        return branches.change(self.file, req)
+
+    def steps(self):
+        return branches.inspect(self.file)["checkpoints"]
+
+    def raw(self):
+        return json.loads(self.file.read_text(encoding="utf-8"))
+
+    def test_add_puts_the_skill_on_that_step_and_keeps_everything_else(self):
+        before = self.file.read_bytes()
+        self.assertEqual(self.change(op="step-add", step=1, skill="skill-z"), {"ok": True, "problem": None})
+        self.assertEqual(self.steps()[1], {"before": "save_text", "where": {"path": "*.md"}, "skills": ["skill-b", "skill-c", "skill-z"]})
+        raw = self.raw()
+        self.assertEqual((raw["checkpoints"][0], raw["checkpoints"][1]),
+                         ({"before": "send_helper", "skills": ["skill-a"], "note": "kept"}, {"before": "", "skills": ["skill-x"]}))
+        self.assertEqual(raw["branches"], json.loads(before)["branches"])
+        self.assertEqual([b.read_bytes() for b in (self.file.parent / "backups").iterdir()], [before])
+
+    def test_written_file_keeps_its_line_endings_and_one_line_per_step(self):
+        self.change(op="step-add", step=0, skill="skill-z")
+        text = self.file.read_bytes().decode("utf-8")
+        self.assertNotIn("\n", text.replace("\r\n", ""))
+        self.assertIn('    {"before": "send_helper", "skills": ["skill-a", "skill-z"], "note": "kept"},\r\n', text)
+
+    def test_add_refuses_a_skill_the_step_already_has(self):
+        self.assertEqual(self.change(op="step-add", step=0, skill="skill-a")["problem"], "skill-a is already asked for before send_helper.")
+
+    def test_remove_takes_the_skill_off_that_step_only(self):
+        self.assertTrue(self.change(op="step-remove", step=1, skill="skill-b")["ok"])
+        self.assertEqual([s["skills"] for s in self.steps()], [["skill-a"], ["skill-c"]])
+        self.assertEqual(self.change(op="step-remove", step=1, skill="skill-b")["problem"], "skill-b is not asked for before save_text.")
+
+    def test_remove_refuses_the_last_skill_of_a_step(self):
+        before = self.file.read_bytes()
+        self.assertEqual(self.change(op="step-remove", step=0, skill="skill-a")["problem"], branches.STEP_NEEDS_SKILL)
+        self.assertEqual(self.file.read_bytes(), before)
+
+    def test_delete_removes_that_step_only(self):
+        self.assertTrue(self.change(op="step-delete", step=0)["ok"])
+        self.assertEqual([s["before"] for s in self.steps()], ["save_text"])
+        self.assertEqual(len(self.raw()["checkpoints"]), 2)
+
+    def test_a_step_that_is_not_there_is_refused(self):
+        for step in (2, -1, "0", None, True, 1.0):
+            with self.subTest(step=step):
+                self.assertEqual(self.change(op="step-delete", step=step)["problem"], branches.NO_STEP)
+
+    def test_create_adds_a_step_at_the_end(self):
+        self.assertTrue(self.change(op="step-create", before="  ship   it ", skills=["skill-a", "skill-b"])["ok"])
+        self.assertEqual(self.steps()[-1], {"before": "ship it", "skills": ["skill-a", "skill-b"]})
+        self.assertTrue(self.change(op="step-create", before="save_text", where={" path ": " *.txt "}, skills=["skill-a"])["ok"])
+        self.assertEqual(self.steps()[-1], {"before": "save_text", "where": {"path": "*.txt"}, "skills": ["skill-a"]})
+
+    def test_create_on_a_file_without_the_list_adds_it(self):
+        self.file.write_text(json.dumps(TREE), encoding="utf-8")
+        self.assertTrue(self.change(op="step-create", before="send_helper", skills=["skill-a"])["ok"])
+        self.assertEqual(self.steps(), [{"before": "send_helper", "skills": ["skill-a"]}])
+        self.assertEqual(len(branches.inspect(self.file)["branches"]), 2)
+
+    def test_create_checks_the_action_the_condition_and_the_skills(self):
+        ok = {"before": "ship it", "skills": ["skill-a"]}
+        cases = [
+            ({"before": " "}, branches.BAD_ACTION), ({"before": 7}, branches.BAD_ACTION),
+            ({"before": "make 2>&1 now"}, branches.BAD_ACTION), ({"before": "x" * 101}, branches.BAD_ACTION),
+            ({"before": "two\nlines"}, branches.BAD_ACTION),
+            ({"where": {}}, branches.BAD_CONDITION), ({"where": {"path": " "}}, branches.BAD_CONDITION),
+            ({"where": {"path": 3}}, branches.BAD_CONDITION), ({"where": "path"}, branches.BAD_CONDITION),
+            ({"skills": []}, branches.NO_SKILLS), ({"skills": ["skill-a", "skill-a"]}, branches.BAD_SKILL),
+            ({"skills": ["a\nb"]}, branches.BAD_SKILL),
+            ({"before": "send_helper"}, 'There is already a step before "send_helper".'),
+            ({"before": "save_text", "where": {"path": "*.md"}}, 'There is already a step before "save_text" with that condition.'),
+        ]
+        before = self.file.read_bytes()
+        for over, problem in cases:
+            with self.subTest(over=over):
+                self.assertEqual(self.change(op="step-create", **{**ok, **over})["problem"], problem)
+        self.assertEqual(self.file.read_bytes(), before)
+
+    def test_edit_changes_the_action_and_the_condition(self):
+        self.assertTrue(self.change(op="step-edit", step=0, before="send_other", where={"to": "x*"})["ok"])
+        self.assertEqual(self.raw()["checkpoints"][0], {"before": "send_other", "where": {"to": "x*"}, "skills": ["skill-a"], "note": "kept"})
+        self.assertEqual(list(self.raw()["checkpoints"][0]), ["before", "where", "skills", "note"])
+        self.assertTrue(self.change(op="step-edit", step=1, before="save_text", where=None)["ok"])
+        self.assertEqual(self.steps()[1], {"before": "save_text", "skills": ["skill-b", "skill-c"]})
+
+    def test_edit_without_a_condition_in_the_request_keeps_the_one_in_the_file(self):
+        self.assertTrue(self.change(op="step-edit", step=1, before="save_note")["ok"])
+        self.assertEqual(self.steps()[1], {"before": "save_note", "where": {"path": "*.md"}, "skills": ["skill-b", "skill-c"]})
+
+    def test_edit_refuses_what_another_step_already_is(self):
+        self.assertEqual(self.change(op="step-edit", step=0, before="save_text", where={"path": "*.md"})["problem"],
+                         'There is already a step before "save_text" with that condition.')
+        self.assertTrue(self.change(op="step-edit", step=0, before="send_helper", where=None)["ok"])
+
+    def test_a_checkpoints_entry_that_is_not_a_list_is_not_edited(self):
+        self.file.write_text(json.dumps(dict(TREE, checkpoints={"before": "x"})), encoding="utf-8")
+        self.assertEqual(self.change(op="step-create", before="ship it", skills=["skill-a"])["problem"], branches.BAD_STEP_LIST)
+
+    def test_stale_page_is_refused(self):
+        self.assertEqual(self.change(op="step-delete", step=0, rev="0" * 16)["problem"], branches.STALE)
+
+
 if __name__ == "__main__":
     unittest.main()

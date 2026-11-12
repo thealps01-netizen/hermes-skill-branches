@@ -85,8 +85,10 @@ Checkpoints are an optional second list in the same file:
 - An invalid checkpoint is left out, logged once per turn and named on the desktop page; the
   branches and the other checkpoints keep working.
 - An error inside the plugin never stops a call: the call runs and one warning is logged.
-- The desktop page lists the checkpoints and marks skills that are not installed; they are edited in
-  the file.
+- The desktop page draws each checkpoint as a "step" under the branches: its action, its condition
+  and its skills, with skills that are not installed marked. Skills can be added to and removed from
+  a step there, and a step can be created, edited or deleted; a step whose `where` holds more than
+  one argument keeps it, and that part is changed in the file.
 
 - Missing file: the plugin adds nothing. Invalid file: adds nothing and logs one warning.
 - One level only: a branch holds skill names, not other branches. A `branches` list in place of
