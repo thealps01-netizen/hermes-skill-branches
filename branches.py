@@ -190,12 +190,13 @@ def _skills(value):
 
 # The action and condition of a step as the file will hold them. Returns (before, where, problem);
 # `where` is None for a step without a condition.
-def _step_shape(rows, before, where, keep=None):
+# `typed` is False for a condition taken from the file: it is valid there and is kept as it is.
+def _step_shape(rows, before, where, keep=None, typed=True):
     if not _line(before, 100):
         return None, None, BAD_ACTION
     before = " ".join(before.split())
     if where is not None:
-        if not (isinstance(where, dict) and where and all(_line(k, 200) and _line(v, 200) for k, v in where.items())):
+        if typed and not (isinstance(where, dict) and where and all(_line(k, 200) and _line(v, 200) for k, v in where.items())):
             return None, None, BAD_CONDITION
         where = {k.strip(): v.strip() for k, v in where.items()}
     if _checkpoint_problem({"before": before, "skills": ["-"]}):
@@ -231,8 +232,8 @@ def _apply_step(data, req):
     if op == "step-delete":
         rows[:] = [r for r in rows if r is not row]
     elif op == "step-edit":
-        old = row.get("where")
-        before, where, problem = _step_shape(valid, req.get("before"), req["where"] if "where" in req else old, keep=row)
+        typed = "where" in req
+        before, where, problem = _step_shape(valid, req.get("before"), req["where"] if typed else row.get("where"), keep=row, typed=typed)
         if problem:
             return problem
         rest = {k: v for k, v in row.items() if k not in CHECKPOINT_KEYS}

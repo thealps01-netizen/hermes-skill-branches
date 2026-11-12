@@ -540,6 +540,13 @@ class StepChangeTests(unittest.TestCase):
         self.assertTrue(self.change(op="step-edit", step=1, before="save_note")["ok"])
         self.assertEqual(self.steps()[1], {"before": "save_note", "where": {"path": "*.md"}, "skills": ["skill-b", "skill-c"]})
 
+    def test_edit_keeps_a_condition_the_page_could_not_have_typed(self):
+        long = {"path": "*" + "a" * 220, "mode": "w*"}
+        self.file.write_text(json.dumps(dict(TREE, checkpoints=[{"before": "save_text", "where": long, "skills": ["skill-a"]}])), encoding="utf-8")
+        self.assertEqual(self.change(op="step-edit", step=0, before="save_note"), {"ok": True, "problem": None})
+        self.assertEqual(self.steps(), [{"before": "save_note", "where": long, "skills": ["skill-a"]}])
+        self.assertEqual(self.change(op="step-edit", step=0, before="save_note", where=long)["problem"], branches.BAD_CONDITION)
+
     def test_edit_refuses_what_another_step_already_is(self):
         self.assertEqual(self.change(op="step-edit", step=0, before="save_text", where={"path": "*.md"})["problem"],
                          'There is already a step before "save_text" with that condition.')

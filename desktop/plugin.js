@@ -479,7 +479,16 @@ function Pop({ anchor, label, onClose, children }) {
 }
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
-const stepId = c => JSON.stringify([c.before, c.where || null])
+// One id per step row: its action and condition, numbered when the file holds the same pair twice.
+const stepIds = steps => {
+  const seen = new Map()
+  return steps.map(c => {
+    const base = JSON.stringify([c.before, c.where || null])
+    const n = seen.get(base) || 0
+    seen.set(base, n + 1)
+    return n ? `${base}#${n}` : base
+  })
+}
 const oneLine = s => (s || '').trim().replace(/\s+/g, ' ')
 
 function Tree({ ctx, tree, skills, refresh, t }) {
@@ -518,8 +527,9 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     return { ...f, idx, shown, isOpen: ql ? shown.length > 0 : folds.has(f.cat), visible: ql ? shown.length > 0 : allFolders || idx < MAX_FOLDERS }
   })
   const whenText = c => (c.where ? t('skb.stepOnly', Object.entries(c.where).map(([k, v]) => t('skb.stepWhen', k, v)).join(t('skb.stepAnd'))) : '')
+  const ids = stepIds(m.steps)
   const stepRows = m.steps.map((c, i) => {
-    const id = stepId(c)
+    const id = ids[i]
     const stepHit = !!ql && lower(c.before).includes(ql)
     const shown = ql ? c.skills.filter(s => stepHit || match(s)) : c.skills
     return { c, i, id, shown, isOpen: ql ? shown.length > 0 : openSteps.has(id), visible: !ql || shown.length > 0 }
@@ -542,11 +552,11 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     if (refocus && p?.anchor?.isConnected) ctx.setTimeout(() => p.anchor.focus({ preventScroll: true }), 0)
   }
   // After a save the button that opened the popover may be gone (a removed row, a renamed branch):
-  // focus goes to it if it is still there, else to the branch's head, else to the first one.
-  const refocusAfterSave = (anchor, branch) => ctx.setTimeout(() => {
+  // focus goes to it if it is still there, else to the head of that branch or step, else to the first one of its trunk.
+  const refocusAfterSave = (anchor, branch, step) => ctx.setTimeout(() => {
     const now = document.activeElement
     if (popRef.current || (now && now !== document.body && now.isConnected)) return
-    const heads = [...(mainRef.current?.querySelectorAll('.skb-br') || [])]
+    const heads = [...(mainRef.current?.querySelectorAll(step ? '.skb-st > .skb-br' : '.skb-bs:not(.skb-st) > .skb-br') || [])]
     const head = heads.find(x => x.querySelector('.skb-n')?.textContent === branch) || heads[0]
     const target = anchor?.isConnected ? anchor : head?.querySelector('.skb-tog')
     target?.focus({ preventScroll: true })
@@ -570,7 +580,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
       upd({ problem: res?.problem || t('skb.saveFailed', 'no answer') })
     }
     await refresh()
-    if (res?.ok) refocusAfterSave(anchor, focusName || req.name || req.branch)
+    if (res?.ok) refocusAfterSave(anchor, focusName || req.name || req.branch, notice === 'skb.stepSaved')
   }
 
   const kc = k => (typeof k === 'number' ? `skb-k${k}` : k)
@@ -635,8 +645,8 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     return { nodes, before, where, many, ok: !!before && !long && !bad && !taken && !half }
   }
   const stepPop = () => {
-    const c = pop.step ? m.steps.find(x => stepId(x) === pop.step) : null
-    const at = m.steps.indexOf(c)
+    const at = pop.step ? ids.indexOf(pop.step) : -1
+    const c = m.steps[at]
     if (pop.kind === 'srm' && c && c.skills.includes(pop.skill)) {
       const others = branchesWith(pop.skill)
       const last = c.skills.length === 1
