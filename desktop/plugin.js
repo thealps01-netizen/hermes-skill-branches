@@ -265,7 +265,7 @@ const CSS = `
 .skb-pop{position:absolute;z-index:20;width:384px;max-width:calc(100% - 24px);box-sizing:border-box;background:var(--ui-bg-elevated);border:1px solid var(--ui-stroke-secondary);border-radius:12px;padding:14px 16px;box-shadow:0 18px 40px -14px color-mix(in srgb,var(--ui-bg-chrome) 85%,transparent);animation:skb-fade 150ms cubic-bezier(0,0,.38,.9)}
 .skb-pop::before{content:"";position:absolute;top:-6px;left:var(--ar,24px);width:10px;height:10px;background:inherit;border:solid var(--ui-stroke-secondary);border-width:1px 0 0 1px;transform:rotate(45deg)}
 .skb-pop h3{margin:0 0 4px;font-size:14px;font-weight:600;line-height:20px;overflow-wrap:anywhere}
-.skb-pop>p{margin:0 0 10px;color:var(--ui-text-secondary)}
+.skb-popin>p{margin:0 0 10px;color:var(--ui-text-secondary)}
 .skb-lbl{display:block;margin:0 0 4px;font-size:12px;font-weight:600;color:var(--ui-text-secondary)}
 .skb-fl{display:block;margin:0 0 10px}
 .skb-pop h3+.skb-fl{margin-top:10px}
@@ -305,7 +305,9 @@ const CSS = `
 .skb-pvh i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--h);align-self:center}
 .skb-pvh span{font-weight:400;font-size:12px;color:var(--ui-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .skb-note{margin:8px 0 0;font-size:12px;color:var(--ui-text-secondary)}
-.skb .skb-st{--h:var(--ui-text-tertiary)}
+.skb .skb-st{--h:var(--ui-text-secondary)}
+.skb-popin{max-height:var(--pmax,none);overflow-y:auto;margin:-14px -16px;padding:14px 16px 0;border-radius:12px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ui-text-tertiary) 55%,transparent) transparent}
+.skb-popin>.skb-pf{position:sticky;bottom:0;margin:12px -16px 0;padding:10px 16px 14px;background:var(--ui-bg-elevated);border-top:1px solid var(--ui-stroke-tertiary)}
 .skb-steps{margin-top:22px}
 .skb-steps>.skb-turn{margin-bottom:2px}
 .skb-sq{width:11px;height:11px;box-sizing:border-box;flex:none;border-radius:3px;background:var(--ui-text-tertiary)}
@@ -454,7 +456,8 @@ function Pop({ anchor, label, onClose, children }) {
     const w = el.offsetWidth
     const wide = a.width > 60
     const left = Math.max(12, Math.min(wide ? a.left - r.left - 6 : a.right - r.left - w + 6, r.width - w - 12))
-    setPos({ top: a.bottom - r.top + 8, left, ar: Math.max(14, Math.min(w - 26, a.left - r.left - left + Math.min(a.width / 2, 16) - 5)) })
+    const pane = el.closest('.skb-page')
+    setPos({ max: pane ? pane.clientHeight - 32 : 0, top: a.bottom - r.top + 8, left, ar: Math.max(14, Math.min(w - 26, a.left - r.left - left + Math.min(a.width / 2, 16) - 5)) })
   }, [anchor])
   // Focus and scroll only once the popover sits under its button; hidden, it can take neither.
   const placed = useRef(false)
@@ -464,6 +467,11 @@ function Pop({ anchor, label, onClose, children }) {
     placed.current = true
     ;(el.querySelector('[data-autofocus]') || el.querySelector('input,textarea,button'))?.focus({ preventScroll: true })
     el.scrollIntoView?.({ block: 'nearest' })
+    if (typeof ResizeObserver !== 'function') return
+    // picking a skill adds its preview below the list
+    const grow = new ResizeObserver(() => el.scrollIntoView?.({ block: 'nearest' }))
+    grow.observe(el)
+    return () => grow.disconnect()
   }, [pos])
   useEffect(() => {
     const el = ref.current
@@ -473,9 +481,20 @@ function Pop({ anchor, label, onClose, children }) {
   }, [])
   return h('div', {
     ref, role: 'dialog', 'aria-label': label, className: 'skb-pop',
-    style: pos ? { top: `${pos.top}px`, left: `${pos.left}px`, '--ar': `${pos.ar}px` } : { visibility: 'hidden' },
+    style: pos ? { top: `${pos.top}px`, left: `${pos.left}px`, '--ar': `${pos.ar}px`, ...(pos.max > 0 ? { '--pmax': `${pos.max}px` } : {}) } : { visibility: 'hidden' },
     onKeyDown: e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(true) } }
-  }, children)
+  }, h('div', { className: 'skb-popin' }, children))
+}
+
+// The width of the widest row name as drawn, so no name wraps; a guess in characters where text cannot be measured.
+function nameColumn(names) {
+  const guess = `${Math.min(18, Math.max(5, ...names.map(n => n.length)) + 1)}ch`
+  try {
+    const c = document.createElement('canvas').getContext('2d')
+    if (!c) return guess
+    c.font = `600 15px ${getComputedStyle(document.body).fontFamily}`
+    return `${Math.min(170, Math.ceil(Math.max(40, ...names.map(n => c.measureText(n).width))) + 2)}px`
+  } catch { return guess }
 }
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
@@ -495,7 +514,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
   const uid = useId()
   const mainRef = useRef(null)
   const m = buildModel(tree, skills)
-  const [open, setOpen] = useState(() => new Set(m.branches.map(b => b.name)))
+  const [open, setOpen] = useState(() => new Set())
   const [folds, setFolds] = useState(() => new Set())
   const [openSteps, setOpenSteps] = useState(() => new Set())
   const [q, setQ] = useState('')
@@ -537,8 +556,8 @@ function Tree({ ctx, tree, skills, refresh, t }) {
   const hits = rows.reduce((n, r) => n + (ql ? r.shown.length : 0), 0) + stepRows.reduce((n, r) => n + (ql ? r.shown.length : 0), 0) + folderRows.reduce((n, f) => n + (ql ? f.shown.length : 0), 0)
   const extra = m.folders.length - MAX_FOLDERS
   const folderName = cat => cat || t('skb.noFolder')
-  const nameWidth = `${Math.min(18, Math.max(5, ...m.branches.map(b => b.name.length)) + 1)}ch`
-  const stepWidth = `${Math.min(18, Math.max(5, ...m.steps.map(c => c.before.length)) + 1)}ch`
+  const nameWidth = nameColumn(m.branches.map(b => b.name))
+  const stepWidth = nameColumn(m.steps.map(c => c.before))
   const branchesWith = (skill, except) => m.branches.filter(b => b !== except && b.skills.includes(skill)).map(b => b.name)
 
   // ── edits: one popover at a time; the change goes to the plugin's own route, never to a chat ──

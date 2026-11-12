@@ -55,6 +55,8 @@ for (const k of ['window', 'document', 'Node', 'Element', 'HTMLElement', 'Event'
   Object.defineProperty(globalThis, k, { value: k === 'window' ? dom.window : dom.window[k], configurable: true, writable: true })
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+// jsdom draws no canvas: text cannot be measured here, as in any host without one
+dom.window.HTMLCanvasElement.prototype.getContext = () => null
 const React = require('react')
 const { createRoot } = require('react-dom/client')
 const { act } = React
@@ -215,7 +217,9 @@ check(!!ctx.bundle?.en && Object.keys(ctx.bundle).length === 1, 'one English bun
 let el = await mountPage(tree(), baseSkills())
 check(text($(el, 'h2')) === 'Skill branches', 'page title')
 check($$(el, '.skb-br').length === 2, 'two branch rows')
-check(visibleRows(el).join(',') === 'skill-a,skill-b,skill-gone,skill-c', `branch skills listed open (${visibleRows(el).join(',')})`)
+check(visibleRows(el).length === 0, `branches start closed (${visibleRows(el).join(',')})`)
+for (const b of $$(el, '.skb-br .skb-tog')) await click(b)
+check(visibleRows(el).join(',') === 'skill-a,skill-b,skill-gone,skill-c', `opened branches list their skills (${visibleRows(el).join(',')})`)
 const gone = $$(el, '.skb-br li').find(li => text($(li, 'b')) === 'skill-gone')
 check(gone?.classList.contains('skb-miss') && text($(gone, 'span')) === 'Not installed, or turned off on this profile.', 'missing skill marked not installed')
 check(text($(el, '.skb-fh')).includes('17 skills') && text($(el, '.skb-fh')).includes('3 on branches · 14 seeds'), `map header counts (${text($(el, '.skb-fh'))})`)
@@ -658,6 +662,40 @@ const left = $$(el, '.skb-banner.skb-warn').find(b => text(b).includes('Some ste
 check(!!left && text(left).includes('Checkpoint 1 ("x")') && left.getAttribute('role') === 'status', 'steps the file holds but cannot use are named in a notice')
 await unmountAll()
 
+// 8d. the first screen and the popover's fit
+el = await mountPage(stepTree(), baseSkills())
+check($$(el, '.skb-tog').length > 2 && $$(el, '.skb-bs .skb-tog').every(b => b.getAttribute('aria-expanded') === 'false'), 'branches and steps all start closed, so both trunks fit one screen')
+check($$(el, '.skb-bs:not(.skb-st) .skb-br').every(r => text($(r, '.skb-d')).length > 0), 'a closed branch still shows its description')
+await unmountAll()
+{
+  // a pane 600px tall, a canvas that measures 10px a character, and a recorded ResizeObserver
+  const paneHeight = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, 'clientHeight')
+  Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.classList.contains('skb-page') ? 600 : 0 } })
+  const getContext = window.HTMLCanvasElement.prototype.getContext
+  window.HTMLCanvasElement.prototype.getContext = () => ({ font: '', measureText: s => ({ width: s.length * 10 }) })
+  const watched = []
+  const hadRO = globalThis.ResizeObserver
+  globalThis.ResizeObserver = window.ResizeObserver = class { constructor(cb) { this.cb = cb } observe(n) { watched.push([n, this.cb]) } disconnect() { watched.length = 0 } }
+  el = await mountPage(stepTree(), baseSkills())
+  check($(el, '.skb-bs:not(.skb-st)').style.getPropertyValue('--nw') === '52px' && $(el, '.skb-st').style.getPropertyValue('--nw') === '112px', `each trunk's name column is as wide as its longest name as drawn (${$(el, '.skb-bs').style.getPropertyValue('--nw')}, ${$(el, '.skb-st').style.getPropertyValue('--nw')})`)
+  await click($(el, '.skb-steps .skb-nbb'))
+  pop = pops(el)[0]
+  const inner = $(pop, '.skb-popin')
+  check(!!inner && inner.parentElement === pop && !!$(inner, '.skb-pf') && $(inner, '.skb-pf').parentElement === inner && $(inner, 'h3').parentElement === inner, 'the popover scrolls inside itself; its buttons are the last row of that scroller')
+  check(pop.style.getPropertyValue('--pmax') === '568px', `the popover is no taller than the pane, less a margin (${pop.style.getPropertyValue('--pmax')})`)
+  let followed = 0
+  pop.scrollIntoView = () => { followed++ }
+  check(watched.length === 1 && watched[0][0] === pop, 'the popover watches its own size')
+  watched[0]?.[1]()
+  check(followed === 1, 'when it grows, the popover is brought back into view')
+  await key(pop, 'Escape')
+  check(watched.length === 0, 'the watch ends with the popover')
+  await unmountAll()
+  if (paneHeight) Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', paneHeight); else delete window.HTMLElement.prototype.clientHeight
+  window.HTMLCanvasElement.prototype.getContext = getContext
+  globalThis.ResizeObserver = window.ResizeObserver = hadRO
+}
+
 // 9. copy and theme
 el = await mountPage(tree({ ignored: ['"x"'] }), baseSkills())
 const labels = $$(el, '*').flatMap(n => [n.getAttribute('aria-label'), n.getAttribute('title'), n.getAttribute('placeholder')]).filter(Boolean)
@@ -665,7 +703,7 @@ check(!/\bskb\.[a-zA-Z]/.test(el.textContent + labels.join(' ')), 'no raw i18n k
 await unmountAll()
 
 const cssText = source.match(/const CSS = `([\s\S]*?)`/)[1]
-const vars = [...new Set([...source.matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]))].filter(v => !['--ground', '--ground2', '--h', '--tone', '--nw', '--dl', '--ar'].includes(v))
+const vars = [...new Set([...source.matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]))].filter(v => !['--ground', '--ground2', '--h', '--tone', '--nw', '--dl', '--ar', '--pmax'].includes(v))
 const findAppCss = () => {
   if (process.env.HERMES_APP_CSS) return process.env.HERMES_APP_CSS
   const homes = [process.env.HERMES_HOME, process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'hermes'), path.join(os.homedir(), '.hermes')].filter(Boolean)
@@ -696,6 +734,7 @@ const actRule = cssText.match(/\.skb \.skb-add\{([^}]*)\}/)?.[1] ?? ''
 check(actRule !== '' && !/position:absolute/.test(actRule), 'row buttons sit in their own column and never cover the description')
 check(/width:24px/.test(actRule) && /height:24px/.test(actRule), 'row buttons have a 24px target')
 check(/@media \(hover:none\)\{[^}]*\.skb-add[^}]*opacity:1/.test(cssText), 'on touch screens the row buttons are always shown')
+check(!/\.skb-pop>/.test(cssText) && /\.skb-popin>p\{/.test(cssText), 'popover rules for direct children name the scroller, which holds them')
 check(reactWarnings.length === 0, `React logged no warning${reactWarnings.length ? `: ${reactWarnings[0].slice(0, 300)}` : ''}`)
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed')
