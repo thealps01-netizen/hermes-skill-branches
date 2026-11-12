@@ -559,6 +559,7 @@ function Tree({ ctx, tree, skills, refresh, t }) {
     const heads = [...(mainRef.current?.querySelectorAll(step ? '.skb-st > .skb-br' : '.skb-bs:not(.skb-st) > .skb-br') || [])]
     const head = heads.find(x => x.querySelector('.skb-n')?.textContent === branch) || heads[0]
     const target = anchor?.isConnected ? anchor : head?.querySelector('.skb-tog')
+      || mainRef.current?.querySelector(step ? '.skb-st .skb-nbb' : '.skb-bs:not(.skb-st) .skb-nbb')
     target?.focus({ preventScroll: true })
   }, 0)
   const save = async (req, focusName, notice = 'skb.saved') => {
