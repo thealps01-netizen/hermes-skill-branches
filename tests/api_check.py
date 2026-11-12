@@ -60,6 +60,22 @@ class ApiTests(unittest.TestCase):
                 os.utime(source, ns=(stamp, stamp))
                 self.assertEqual(self.get()["state"], state)
 
+    def test_a_change_holds_the_page_lock_so_a_reloaded_module_cannot_write_beside_it(self):
+        import threading
+        seen = []
+
+        def change(path, req):
+            other = threading.Thread(target=lambda: seen.append(api._lock.acquire(blocking=False)))
+            other.start()
+            other.join()
+            return {"ok": True, "problem": None}
+
+        with mock.patch.object(api, "_branches", return_value=types.SimpleNamespace(change=change)):
+            self.assertTrue(api.change_payload({}, self.file)["ok"])
+        self.assertEqual(seen, [False])
+        self.assertTrue(api._lock.acquire(blocking=False))
+        api._lock.release()
+
     def test_missing_tree(self):
         self.assertEqual(self.get()["state"], "missing")
 

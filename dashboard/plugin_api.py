@@ -1,5 +1,6 @@
 import importlib.util
 import logging
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Body
@@ -8,19 +9,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 _SOURCE = Path(__file__).resolve().parents[1] / "branches.py"
 _loaded = None  # (the file's modification time, the module read from it)
+# Each read of branches.py brings its own write lock, so reads and changes are serialised here.
+_lock = threading.RLock()
 
 
 # The host imports this file once per process. A plugin update replaces branches.py under it, so the
 # module is read again when the file changes; otherwise the page shows the old version's answers.
 def _branches():
     global _loaded
-    stamp = _SOURCE.stat().st_mtime_ns
-    if _loaded is None or _loaded[0] != stamp:
-        spec = importlib.util.spec_from_file_location("skill_branches_panel_branches", _SOURCE)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _loaded = (stamp, module)
-    return _loaded[1]
+    with _lock:
+        stamp = _SOURCE.stat().st_mtime_ns
+        if _loaded is None or _loaded[0] != stamp:
+            spec = importlib.util.spec_from_file_location("skill_branches_panel_branches", _SOURCE)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _loaded = (stamp, module)
+        return _loaded[1]
 
 
 def _tree_path():
@@ -63,7 +67,8 @@ async def tree():
 
 def change_payload(req, path=None):
     try:
-        return _branches().change(path or _tree_path(), req)
+        with _lock:
+            return _branches().change(path or _tree_path(), req)
     except Exception as exc:
         logger.warning("skill-branches: panel change failed (%s)", type(exc).__name__)
         return {"ok": False, "problem": "The change could not be saved. Nothing was changed."}
