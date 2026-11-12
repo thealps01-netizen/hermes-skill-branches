@@ -25,7 +25,7 @@ const en = {
     setup: 'Set up with the assistant',
     setupText: 'Load skill-branches:setup and help me set up my skill branches.',
     ignoredTitle: 'Some fields are ignored',
-    ignoredBody: 'Routing reads "group" and "branches" at the top, and "name", "description" and "skills" on a branch. Nested branches are not supported; these fields have no effect:',
+    ignoredBody: 'The file reads "group", "branches" and "checkpoints" at the top; "name", "description" and "skills" on a branch; "before", "where" and "skills" on a checkpoint. Nested branches are not supported; these fields have no effect:',
     turn: 'Turn',
     branch: 'Branch',
     turnHint: 'one message you send',

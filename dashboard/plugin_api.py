@@ -1,22 +1,26 @@
 import importlib.util
 import logging
-import sys
 from pathlib import Path
 
 from fastapi import APIRouter, Body
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_MODULE = "skill_branches_panel_branches"
+_SOURCE = Path(__file__).resolve().parents[1] / "branches.py"
+_loaded = None  # (the file's modification time, the module read from it)
 
 
+# The host imports this file once per process. A plugin update replaces branches.py under it, so the
+# module is read again when the file changes; otherwise the page shows the old version's answers.
 def _branches():
-    if _MODULE not in sys.modules:
-        spec = importlib.util.spec_from_file_location(_MODULE, Path(__file__).resolve().parents[1] / "branches.py")
+    global _loaded
+    stamp = _SOURCE.stat().st_mtime_ns
+    if _loaded is None or _loaded[0] != stamp:
+        spec = importlib.util.spec_from_file_location("skill_branches_panel_branches", _SOURCE)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        sys.modules[_MODULE] = module
-    return sys.modules[_MODULE]
+        _loaded = (stamp, module)
+    return _loaded[1]
 
 
 def _tree_path():

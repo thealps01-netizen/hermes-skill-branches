@@ -6,6 +6,7 @@ It never reads the real branch file: every request is pointed at a temporary one
 """
 import importlib.util
 import json
+import os
 import sys
 import types
 import tempfile
@@ -50,6 +51,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual((got["state"], got["group"], got["branches"][0]["skills"]), ("ok", "Code", ["skill-a"]))
         self.assertNotIn("error", got)
         self.assertEqual(got["path"], str(self.file))
+
+    def test_an_updated_plugin_is_read_without_a_restart(self):
+        source = Path(self.tmp.name) / "branches.py"
+        with mock.patch.object(api, "_SOURCE", source):
+            for stamp, state in ((1_000_000_000, "first"), (2_000_000_000, "second")):
+                source.write_text(f"def inspect(path):\n    return {{'state': '{state}'}}\n", encoding="utf-8")
+                os.utime(source, ns=(stamp, stamp))
+                self.assertEqual(self.get()["state"], state)
 
     def test_missing_tree(self):
         self.assertEqual(self.get()["state"], "missing")
