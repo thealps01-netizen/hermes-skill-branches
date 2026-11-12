@@ -486,14 +486,15 @@ function Pop({ anchor, label, onClose, children }) {
   }, h('div', { className: 'skb-popin' }, children))
 }
 
-// The width of the widest row name as drawn, so no name wraps; a guess in characters where text cannot be measured.
+// The width of the widest row name as drawn, so a branch name of any allowed length stays on one line; a step's
+// action can be longer and wraps past the cap. A guess in characters where text cannot be measured.
 function nameColumn(names) {
   const guess = `${Math.min(18, Math.max(5, ...names.map(n => n.length)) + 1)}ch`
   try {
     const c = document.createElement('canvas').getContext('2d')
     if (!c) return guess
     c.font = `600 15px ${getComputedStyle(document.body).fontFamily}`
-    return `${Math.min(170, Math.ceil(Math.max(40, ...names.map(n => c.measureText(n).width))) + 2)}px`
+    return `${Math.min(340, Math.ceil(Math.max(40, ...names.map(n => c.measureText(n).width))) + 2)}px`
   } catch { return guess }
 }
 

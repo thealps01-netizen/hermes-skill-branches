@@ -678,6 +678,12 @@ await unmountAll()
   globalThis.ResizeObserver = window.ResizeObserver = class { constructor(cb) { this.cb = cb } observe(n) { watched.push([n, this.cb]) } disconnect() { watched.length = 0 } }
   el = await mountPage(stepTree(), baseSkills())
   check($(el, '.skb-bs:not(.skb-st)').style.getPropertyValue('--nw') === '52px' && $(el, '.skb-st').style.getPropertyValue('--nw') === '112px', `each trunk's name column is as wide as its longest name as drawn (${$(el, '.skb-bs').style.getPropertyValue('--nw')}, ${$(el, '.skb-st').style.getPropertyValue('--nw')})`)
+  {
+    const long = stepTree()
+    long.branches[0].name = 'a-branch-name-of-32-characters-x'
+    const wide = await mountPage(long, baseSkills())
+    check($(wide, '.skb-bs:not(.skb-st)').style.getPropertyValue('--nw') === '322px', `the longest name a branch may have still gets its full width (${$(wide, '.skb-bs').style.getPropertyValue('--nw')})`)
+  }
   await click($(el, '.skb-steps .skb-nbb'))
   pop = pops(el)[0]
   const inner = $(pop, '.skb-popin')
