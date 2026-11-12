@@ -486,8 +486,8 @@ function Pop({ anchor, label, onClose, children }) {
   }, h('div', { className: 'skb-popin' }, children))
 }
 
-// The width of the widest row name as drawn, so a branch name of any allowed length stays on one line; a step's
-// action can be longer and wraps past the cap. A guess in characters where text cannot be measured.
+// The width of the widest row name as drawn, so names stay on one line up to a 340px column; a wider name (32 wide
+// letters, a long step action) wraps. A guess in characters, capped at 18, where text cannot be measured.
 function nameColumn(names) {
   const guess = `${Math.min(18, Math.max(5, ...names.map(n => n.length)) + 1)}ch`
   try {
