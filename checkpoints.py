@@ -72,40 +72,50 @@ def _key(point):
     return (point["before"], tuple(sorted(point.get("where", {}).items())), tuple(point["skills"]))
 
 
+def _quoted(names):
+    return ", ".join(f"'{s}'" for s in names)
+
+
 class Gate:
     """Remembers, per session, which skills were loaded and which checkpoints already asked.
 
     A checkpoint asks at most once per session, so a skill that cannot be loaded never causes a loop.
+    A load counts for calls of a later reply only: a call sent in the same reply as the load was written
+    before the skill's text came back. Replies are told apart by the host's api_request_id; a host that
+    sends none makes a load count at once.
     forget() starts a session over: after a compaction the loaded skills are no longer in the model's context.
     State lives in memory: after a process restart a checkpoint may ask once more.
     """
 
     def __init__(self, limit=500):
         self._limit = limit
-        self._state = OrderedDict()  # session id -> (loaded skill names, checkpoints that asked)
+        # session id -> (loaded skill name -> reply id of its first load, checkpoints that asked)
+        self._state = OrderedDict()
         self._lock = threading.Lock()
 
     def sessions(self):
         return list(self._state)
 
     def _entry(self, session_id):
-        entry = self._state.setdefault(session_id, (set(), set()))
+        entry = self._state.setdefault(session_id, ({}, set()))
         self._state.move_to_end(session_id)
         while len(self._state) > self._limit:
             self._state.popitem(last=False)
         return entry
 
-    def loaded(self, session_id, names):
+    def loaded(self, session_id, names, request_id=""):
         names = [n for n in names if isinstance(n, str) and n]
         if session_id and names:
             with self._lock:
-                self._entry(session_id)[0].update(names)
+                seen = self._entry(session_id)[0]
+                for name in names:
+                    seen.setdefault(name, request_id or "")
 
     def forget(self, session_id):
         with self._lock:
             self._state.pop(session_id, None)
 
-    def decide(self, points, tool_name, args, session_id):
+    def decide(self, points, tool_name, args, session_id, request_id=""):
         """Return the text that replaces the call's result, or None to let the call run."""
         if not session_id or not points or tool_name == SKILL_TOOL:
             return None
@@ -113,15 +123,26 @@ class Gate:
         if not hit:
             return None
         with self._lock:
-            loaded, asked = self._entry(session_id)
-            missing = []
+            seen, asked = self._entry(session_id)
+            missing, unread = [], []
             for point in hit:
                 if _key(point) in asked:
                     continue
                 asked.add(_key(point))
-                missing += [s for s in point["skills"] if s not in loaded and s not in missing]
-        if not missing:
-            return None
-        names = ", ".join(f"'{s}'" for s in missing)
-        return (f"This call was not run. Before it, load the skill{'s' if len(missing) > 1 else ''} {names} "
-                "with skill_view, then repeat the same call.")
+                for s in point["skills"]:
+                    if s in missing or s in unread:
+                        continue
+                    if s not in seen:
+                        missing.append(s)
+                    elif request_id and seen[s] == request_id:
+                        unread.append(s)
+        unread_note = (f"it was sent in the same reply that loads {_quoted(unread)}, before that text could be read"
+                       if unread else "")
+        if missing:
+            text = (f"This call was not run. Before it, load the skill{'s' if len(missing) > 1 else ''} "
+                    f"{_quoted(missing)} with skill_view")
+            return text + (f"; {unread_note}. Read all of them, then repeat the same call." if unread
+                           else ", then repeat the same call.")
+        if unread:
+            return f"This call was not run: {unread_note}. Read it, then repeat the call if it still fits."
+        return None

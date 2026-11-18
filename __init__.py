@@ -35,9 +35,9 @@ _gate = checkpoints.Gate()
 
 
 # Fails open: a call is only ever held by a checkpoint from the owner's file, never by an error here.
-def _pre_tool_call(tool_name="", args=None, session_id="", **_):
+def _pre_tool_call(tool_name="", args=None, session_id="", api_request_id="", **_):
     try:
-        message = _gate.decide(branches.load_checkpoints(_tree_path()), tool_name, args, session_id)
+        message = _gate.decide(branches.load_checkpoints(_tree_path()), tool_name, args, session_id, api_request_id)
     except Exception as exc:
         logger.warning("skill-branches: checkpoint skipped (%s)", type(exc).__name__)
         return None
@@ -47,11 +47,11 @@ def _pre_tool_call(tool_name="", args=None, session_id="", **_):
     return {"action": "block", "message": message}
 
 
-def _post_tool_call(tool_name="", args=None, result=None, session_id="", **_):
+def _post_tool_call(tool_name="", args=None, result=None, session_id="", api_request_id="", **_):
     if tool_name != checkpoints.SKILL_TOOL:
         return
     try:
-        _gate.loaded(session_id, checkpoints.loaded_names(args, result))
+        _gate.loaded(session_id, checkpoints.loaded_names(args, result), api_request_id)
     except Exception as exc:
         logger.warning("skill-branches: skill load not recorded (%s)", type(exc).__name__)
 

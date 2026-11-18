@@ -76,8 +76,11 @@ Checkpoints are an optional second list in the same file:
   wildcard, letter case ignored).
 - A checkpoint stops a call at most once per session, also when the skill is never loaded, so a
   wrong skill name cannot cause a loop. A skill counts as loaded once `skill_view` has returned it
-  in that session. After a compaction the session starts over: the loaded text is gone from the
-  model's context, so a checkpoint asks again.
+  in that session, for calls of a later reply: a call sent in the same reply as the load was written
+  before the skill's text came back, so it is stopped with a note saying so. Replies are told apart by
+  the host's `api_request_id`; a host that sends none makes a load count at once. After a compaction
+  the session starts over: the loaded text is gone from the model's context, so a checkpoint asks
+  again.
 - A stop is a reminder, not a lock: a model that repeats the call without loading the skill gets
   through. A subagent has its own session and is asked on its own.
 - What was asked is kept in memory, per process: after Hermes restarts, a checkpoint may ask once
