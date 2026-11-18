@@ -72,6 +72,10 @@ def _key(point):
     return (point["before"], tuple(sorted(point.get("where", {}).items())), tuple(point["skills"]))
 
 
+def _quoted(names):
+    return ", ".join(f"'{s}'" for s in names)
+
+
 class Gate:
     """Remembers, per session, which skills were loaded and which checkpoints already asked.
 
@@ -132,12 +136,13 @@ class Gate:
                         missing.append(s)
                     elif request_id and seen[s] == request_id:
                         unread.append(s)
+        unread_note = (f"it was sent in the same reply that loads {_quoted(unread)}, before that text could be read"
+                       if unread else "")
         if missing:
-            names = ", ".join(f"'{s}'" for s in missing + unread)
-            return (f"This call was not run. Before it, load the skill{'s' if len(missing + unread) > 1 else ''} "
-                    f"{names} with skill_view, then repeat the same call.")
+            text = (f"This call was not run. Before it, load the skill{'s' if len(missing) > 1 else ''} "
+                    f"{_quoted(missing)} with skill_view")
+            return text + (f"; {unread_note}. Read all of them, then repeat the same call." if unread
+                           else ", then repeat the same call.")
         if unread:
-            names = ", ".join(f"'{s}'" for s in unread)
-            return (f"This call was not run: it was sent in the same reply that loads {names}, before that text "
-                    "could be read. Read it, then repeat the call if it still fits.")
+            return f"This call was not run: {unread_note}. Read it, then repeat the call if it still fits."
         return None

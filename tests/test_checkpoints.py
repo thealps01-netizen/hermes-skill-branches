@@ -298,9 +298,11 @@ class GateTests(unittest.TestCase):
     def test_a_skill_never_loaded_keeps_the_load_message_beside_a_same_reply_one(self):
         self.gate.loaded("s1", ["message-rules"], "t1:api:1")
         got = self.gate.decide(POINTS, "terminal", {"command": "vcs save"}, "s1", "t1:api:1")
-        self.assertIn("'review-rules'", got)
-        self.assertIn("'message-rules'", got)
-        self.assertIn("skill_view", got)
+        load, _, unread = got.partition("same reply")
+        self.assertIn("'review-rules'", load)
+        self.assertIn("skill_view", load)
+        self.assertNotIn("message-rules", load)
+        self.assertIn("'message-rules'", unread)
 
 
 class LoadedNamesTests(unittest.TestCase):
