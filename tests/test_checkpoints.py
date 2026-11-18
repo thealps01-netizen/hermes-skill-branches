@@ -270,6 +270,38 @@ class GateTests(unittest.TestCase):
             gate.decide(POINTS, "send_helper", {}, sid)
         self.assertEqual(gate.sessions(), ["s2", "s3"])
 
+    # A reply can hold a skill load and the checked call side by side: the call was written before the
+    # skill's text came back, so that load does not count for it.
+    def test_a_load_in_the_same_reply_does_not_count(self):
+        self.gate.loaded("s1", ["brief-rules"], "t1:api:1")
+        got = self.gate.decide(POINTS, "send_helper", {}, "s1", "t1:api:1")
+        self.assertIn("was not run", got)
+        self.assertIn("'brief-rules'", got)
+        self.assertIn("same reply", got)
+        self.assertIsNone(self.gate.decide(POINTS, "send_helper", {}, "s1", "t1:api:1"))
+
+    def test_a_load_in_an_earlier_reply_counts(self):
+        self.gate.loaded("s1", ["brief-rules"], "t1:api:1")
+        self.assertIsNone(self.gate.decide(POINTS, "send_helper", {}, "s1", "t1:api:2"))
+
+    def test_a_skill_loaded_earlier_and_again_in_this_reply_counts(self):
+        self.gate.loaded("s1", ["brief-rules"], "t1:api:1")
+        self.gate.loaded("s1", ["brief-rules"], "t1:api:2")
+        self.assertIsNone(self.gate.decide(POINTS, "send_helper", {}, "s1", "t1:api:2"))
+
+    def test_without_a_reply_id_a_load_counts_at_once(self):
+        self.gate.loaded("s1", ["brief-rules"])
+        self.assertIsNone(self.gate.decide(POINTS, "send_helper", {}, "s1", "t1:api:1"))
+        self.gate.loaded("s2", ["brief-rules"], "t1:api:1")
+        self.assertIsNone(self.gate.decide(POINTS, "send_helper", {}, "s2"))
+
+    def test_a_skill_never_loaded_keeps_the_load_message_beside_a_same_reply_one(self):
+        self.gate.loaded("s1", ["message-rules"], "t1:api:1")
+        got = self.gate.decide(POINTS, "terminal", {"command": "vcs save"}, "s1", "t1:api:1")
+        self.assertIn("'review-rules'", got)
+        self.assertIn("'message-rules'", got)
+        self.assertIn("skill_view", got)
+
 
 class LoadedNamesTests(unittest.TestCase):
     def test_a_successful_load_counts_under_the_asked_and_the_returned_name(self):
@@ -349,6 +381,15 @@ class HookTests(unittest.TestCase):
         self.ctx.hooks["post_tool_call"](tool_name="skill_view", args={"name": "x/brief-rules"}, session_id="s1",
                                          result=json.dumps({"success": True, "name": "brief-rules"}), status="ok")
         self.assertIsNone(self.hook(tool_name="send_helper", args={}, session_id="s1"))
+
+    def test_a_load_counts_only_for_calls_of_a_later_reply(self):
+        _write(self.tmp.name, TREE)
+        load = dict(tool_name="skill_view", args={"name": "brief-rules"},
+                    result=json.dumps({"success": True, "name": "brief-rules"}))
+        self.ctx.hooks["post_tool_call"](session_id="s1", api_request_id="t1:api:1", **load)
+        self.assertIsNotNone(self.hook(tool_name="send_helper", args={}, session_id="s1", api_request_id="t1:api:1"))
+        self.ctx.hooks["post_tool_call"](session_id="s2", api_request_id="t1:api:1", **load)
+        self.assertIsNone(self.hook(tool_name="send_helper", args={}, session_id="s2", api_request_id="t1:api:2"))
 
     def test_a_failed_skill_load_does_not(self):
         _write(self.tmp.name, TREE)
